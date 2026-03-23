@@ -1141,7 +1141,6 @@
       deathFailPills: [1,2,3].map((i) => document.getElementById(`death-fail-${i}`)),
       addInventoryBtn: document.getElementById('addInventoryBtn'),
       addSpellBtn: document.getElementById('addSpellBtn'),
-      addSpellbookCardBtn: document.getElementById('addSpellbookCardBtn'),
       addWeaponBtn: document.getElementById('addWeaponBtn')
     };
 
@@ -2688,6 +2687,34 @@
     })();
   </script>
 
+
+
+<!-- FOOTER -->
+<footer style="position:fixed;bottom:0;left:0;width:100%;text-align:center;padding:6px;font-size:12px;color:#aaa;background:rgba(0,0,0,0.3);backdrop-filter:blur(6px);">
+  <span style="cursor:pointer;" onclick="openLegal()">Impressum & Datenschutz</span>
+</footer>
+
+<!-- MODAL -->
+<div id="legalModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);justify-content:center;align-items:center;z-index:9999;">
+  <div style="background:#1a1010;color:#fff;padding:20px;border-radius:16px;max-width:500px;width:90%;box-shadow:0 0 30px rgba(0,0,0,0.5);">
+    <h2>Impressum</h2>
+    <p>Raphael Eibensteiner<br>Zwettl, Österreich<br>Email: raphael@nordklang.at</p>
+
+    <h2>Datenschutz</h2>
+    <p>Diese Anwendung speichert Daten lokal im Browser. Es erfolgt keine Weitergabe an Dritte.</p>
+
+    <button onclick="closeLegal()" style="margin-top:10px;padding:6px 12px;border:none;border-radius:8px;background:#c62828;color:white;cursor:pointer;">Schließen</button>
+  </div>
+</div>
+
+<script>
+function openLegal(){
+  document.getElementById('legalModal').style.display='flex';
+}
+function closeLegal(){
+  document.getElementById('legalModal').style.display='none';
+}
+</script>
 
 </body>
 </html>
