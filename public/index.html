@@ -1,17 +1,10 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-  <title>DnD Charakterbogen</title>
-
-  <!-- DRACHEN FAVICON -->
-  <link rel="icon" type="image/png" href="/dragon.png?v=1">
-  <link rel="shortcut icon" href="/dragon.png?v=1">
-  <link rel="apple-touch-icon" href="/dragon.png?v=1">
-
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DnD Charakterbogen by Raphael Eibensteiner</title>
+  <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"%3E%3Cdefs%3E%3ClinearGradient id="g" x1="0" x2="1" y1="0" y2="1"%3E%3Cstop offset="0%25" stop-color="%2386efac"/%3E%3Cstop offset="100%25" stop-color="%2315803d"/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill="url(%23g)" d="M50 14c-5 1-8 4-10 7-4-4-10-5-17-3-8 2-14 8-15 17 0 8 5 16 15 19l4-8 8 3 3 10 7-2-2-8 6-3 6 4 5-4-4-6 4-6-7-2 2-6-5-3z"/%3E%3Cpath fill="%23052e16" d="M45 22c-2 0-3 2-3 4 0 1 1 2 3 2s3-1 3-2c0-2-1-4-3-4zm-18 9-7 4 4 3 5-2 6 2 3 5 7-2 2-6-4-4-7 1-3-4z"/%3E%3Cpath fill="%23f97316" d="M12 35c-2 1-5 4-6 8 5 0 9-2 12-5z"/%3E%3C/svg%3E' />
   <style>
     :root {
       --bg-1: #120a0a;
@@ -185,6 +178,23 @@
     }
     .inventory-row { grid-template-columns: minmax(0, 1fr) 110px; }
     .spell-row { grid-template-columns: 90px minmax(0, 1fr) 120px auto; }
+    .spellbook-toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+    .spellbook-card-list { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px; }
+    .spellbook-card {
+      background: linear-gradient(180deg, rgba(45, 24, 24, 0.97), rgba(24, 12, 12, 0.98));
+      border: 1px solid rgba(242, 210, 162, 0.16);
+      border-radius: 22px; padding: 16px; box-shadow: var(--shadow);
+      position: relative; overflow: hidden;
+    }
+    .spellbook-card::before {
+      content: "✦"; position:absolute; right:14px; top:10px; font-size:20px; color:rgba(242,210,162,0.18);
+    }
+    .spellbook-card-header { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; }
+    .spellbook-card-title { color: var(--gold); font-weight: 700; letter-spacing: 0.02em; }
+    .spellbook-card-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; }
+    .spellbook-card-grid .full { grid-column: 1 / -1; }
+    .spellbook-card textarea { min-height: 92px; }
+
     .weapon-sheet, .weapon-card {
       background: rgba(41, 37, 36, 0.95);
       border: 1px solid rgba(120, 113, 108, 0.35);
@@ -915,7 +925,14 @@
       <div class="grid">
         <div class="card span-3">
           <h2>Spellbook</h2>
-          <label><span>Eigene Zaubernotizen, Rituale, Formeln, gefundene Sprüche</span><textarea id="spellbook"></textarea></label>
+          <div class="spellbook-toolbar">
+            <button id="addSpellbookCardBtn" class="small-btn">Spellcard hinzufügen</button>
+          </div>
+          <div id="spellbookCardList" class="spellbook-card-list"></div>
+        </div>
+        <div class="card span-3">
+          <h2>Zusätzliche Zaubernotizen</h2>
+          <label><span>Rituale, Formeln, Fundorte, Materialkomponenten, DM-Hinweise</span><textarea id="spellbook"></textarea></label>
         </div>
       </div>
     </section>
@@ -999,6 +1016,7 @@
     const createSpellSlotsDefaults = () => Array.from({ length: 9 }, (_, index) => ({ grad: index + 1, gesamt: 0, verbraucht: 0 }));
     const createInventoryDefaults = () => Array.from({ length: 12 }, () => ({ name: '', anzahl: 1 }));
     const createSpellsDefaults = () => Array.from({ length: 12 }, () => ({ grad: '0', name: '', notiz: '' }));
+    const createSpellbookCardDefaults = () => Array.from({ length: 3 }, () => ({ name: '', grad: '0', schule: '', wirkzeit: '', reichweite: '', komponenten: '', dauer: '', beschreibung: '', notizen: '' }));
     const createWeaponsDefaults = () => Array.from({ length: 4 }, () => ({ name: '', uebung: '', attribut: '', reichweite: '', bonus: '', schaden: '', schadentyp: '', beschreibung: '' }));
 
     const defaultCharacter = {
@@ -1013,7 +1031,7 @@
       zauberKlasse: '', zauberAttribut: 'intelligenz', spellbook: '',
       konzentrationZauber: '', konzentriert: false, zustaende: '', deathSuccess: 0, deathFail: 0, kills: 0, deaths: 0,
       attribute: { staerke: 10, geschicklichkeit: 10, konstitution: 10, intelligenz: 10, weisheit: 10, charisma: 10 },
-      saves: createSaveDefaults(), skills: createSkillDefaults(), inventory: createInventoryDefaults(), spells: createSpellsDefaults(), weapons: createWeaponsDefaults(), spellSlots: createSpellSlotsDefaults()
+      saves: createSaveDefaults(), skills: createSkillDefaults(), inventory: createInventoryDefaults(), spells: createSpellsDefaults(), spellbookCards: createSpellbookCardDefaults(), weapons: createWeaponsDefaults(), spellSlots: createSpellSlotsDefaults()
     };
 
     let character = loadCharacter();
@@ -1112,6 +1130,7 @@
       skillsContainer: document.getElementById('skillsContainer'),
       inventoryList: document.getElementById('inventoryList'),
       spellList: document.getElementById('spellList'),
+      spellbookCardList: document.getElementById('spellbookCardList'),
       spellSlotsContainer: document.getElementById('spellSlotsContainer'),
       weaponsList: document.getElementById('weaponsList'),
       kampfWeaponsList: document.getElementById('kampfWeaponsList'),
@@ -1141,6 +1160,7 @@
         skills: mergeBooleanRecords(base.skills, data.skills),
         inventory: Array.isArray(data.inventory) && data.inventory.length ? data.inventory : base.inventory,
         spells: Array.isArray(data.spells) && data.spells.length ? data.spells : base.spells,
+        spellbookCards: Array.isArray(data.spellbookCards) && data.spellbookCards.length ? data.spellbookCards : base.spellbookCards,
         weapons: Array.isArray(data.weapons) && data.weapons.length
           ? data.weapons.map((weapon) => ({
               ...base.weapons[0],
@@ -1278,6 +1298,32 @@
         el.spellList.appendChild(row);
       });
     }
+    function renderSpellbookCards() {
+      el.spellbookCardList.innerHTML = '';
+      character.spellbookCards.forEach((spell, index) => {
+        const card = document.createElement('div');
+        card.className = 'spellbook-card';
+        card.innerHTML = `
+          <div class="spellbook-card-header">
+            <div class="spellbook-card-title">${escapeHtml(spell.name || `Spellcard ${index + 1}`)}</div>
+            <button class="small-btn" type="button" data-spellbook-remove="${index}">Löschen</button>
+          </div>
+          <div class="spellbook-card-grid">
+            <label class="full"><span>Name</span><input type="text" placeholder="z. B. Magisches Geschoss" value="${escapeHtml(spell.name || '')}" data-spellbook-name="${index}" /></label>
+            <label><span>Grad</span><select data-spellbook-grad="${index}">${Array.from({ length: 10 }, (_, i) => `<option value="${i}" ${String(spell.grad) === String(i) ? 'selected' : ''}>Grad ${i}</option>`).join('')}</select></label>
+            <label><span>Schule</span><input type="text" placeholder="Evokation" value="${escapeHtml(spell.schule || '')}" data-spellbook-schule="${index}" /></label>
+            <label><span>Wirkzeit</span><input type="text" placeholder="1 Aktion" value="${escapeHtml(spell.wirkzeit || '')}" data-spellbook-wirkzeit="${index}" /></label>
+            <label><span>Reichweite</span><input type="text" placeholder="18 m" value="${escapeHtml(spell.reichweite || '')}" data-spellbook-reichweite="${index}" /></label>
+            <label class="full"><span>Komponenten</span><input type="text" placeholder="V, S, M" value="${escapeHtml(spell.komponenten || '')}" data-spellbook-komponenten="${index}" /></label>
+            <label><span>Dauer</span><input type="text" placeholder="Konzentration, bis zu 1 Minute" value="${escapeHtml(spell.dauer || '')}" data-spellbook-dauer="${index}" /></label>
+            <label class="full"><span>Beschreibung</span><textarea placeholder="Was macht der Zauber? Schaden, Effekt, Rettungswurf, Skalierung ..." data-spellbook-beschreibung="${index}">${escapeHtml(spell.beschreibung || '')}</textarea></label>
+            <label class="full"><span>Notizen</span><textarea placeholder="Hausregeln, Lieblingsanwendung, Materialkosten ..." data-spellbook-notizen="${index}">${escapeHtml(spell.notizen || '')}</textarea></label>
+          </div>
+        `;
+        el.spellbookCardList.appendChild(card);
+      });
+    }
+
     function renderSpellSlots() {
       el.spellSlotsContainer.innerHTML = '';
       character.spellSlots.forEach((slot, index) => {
@@ -1446,6 +1492,7 @@
       renderSkills();
       renderInventory();
       renderSpells();
+      renderSpellbookCards();
       renderSpellSlots();
       renderWeapons();
       renderOverviewWeapons();
@@ -1565,6 +1612,35 @@
         saveCharacter();
         render();
       });
+      el.spellbookCardList.addEventListener('input', (e) => {
+        const mappings = {
+          spellbookName: 'name',
+          spellbookSchule: 'schule',
+          spellbookWirkzeit: 'wirkzeit',
+          spellbookReichweite: 'reichweite',
+          spellbookKomponenten: 'komponenten',
+          spellbookDauer: 'dauer',
+          spellbookBeschreibung: 'beschreibung',
+          spellbookNotizen: 'notizen'
+        };
+        Object.entries(mappings).forEach(([datasetKey, field]) => {
+          const idx = e.target.dataset[datasetKey];
+          if (idx !== undefined) character.spellbookCards[Number(idx)][field] = e.target.value;
+        });
+        saveCharacter();
+      });
+      el.spellbookCardList.addEventListener('change', (e) => {
+        const gradIndex = e.target.dataset.spellbookGrad;
+        if (gradIndex !== undefined) { character.spellbookCards[Number(gradIndex)].grad = e.target.value; saveCharacter(); renderSpellbookCards(); }
+      });
+      el.spellbookCardList.addEventListener('click', (e) => {
+        const removeIndex = e.target.dataset.spellbookRemove;
+        if (removeIndex === undefined) return;
+        character.spellbookCards.splice(Number(removeIndex), 1);
+        if (!character.spellbookCards.length) character.spellbookCards.push({ name: '', grad: '0', schule: '', wirkzeit: '', reichweite: '', komponenten: '', dauer: '', beschreibung: '', notizen: '' });
+        saveCharacter();
+        renderSpellbookCards();
+      });
       el.spellSlotsContainer.addEventListener('input', (e) => {
         const gesamtIndex = e.target.dataset.slotGesamt;
         const verbrauchtIndex = e.target.dataset.slotVerbraucht;
@@ -1574,6 +1650,7 @@
       });
       el.addInventoryBtn.addEventListener('click', () => { character.inventory.push({ name: '', anzahl: 1 }); saveCharacter(); render(); });
       el.addSpellBtn.addEventListener('click', () => { character.spells.push({ grad: '0', name: '', notiz: '' }); saveCharacter(); render(); });
+      el.addSpellbookCardBtn.addEventListener('click', () => { character.spellbookCards.push({ name: '', grad: '0', schule: '', wirkzeit: '', reichweite: '', komponenten: '', dauer: '', beschreibung: '', notizen: '' }); saveCharacter(); renderSpellbookCards(); });
       el.addWeaponBtn.addEventListener('click', () => { character.weapons.push({ name: '', uebung: '', attribut: '', reichweite: '', bonus: '', schaden: '', schadentyp: '', beschreibung: '' }); saveCharacter(); render(); });
     }
 
@@ -1624,7 +1701,10 @@
         currentCharacterId: null,
         characters: [],
         localModeChosen: false,
-        adminUsers: []
+        adminUsers: [],
+        groups: [],
+        selectedGroupId: null,
+        selectedGroupDetails: null
       };
 
       const style = document.createElement('style');
@@ -1680,6 +1760,28 @@
         .dashboard-actions, .dashboard-buttons { display:flex; gap:10px; flex-wrap:wrap; }
         .dashboard-buttons { margin-top:14px; }
         .dashboard-status { font-size:13px; min-height:18px; color:var(--muted); margin-top:10px; }
+
+        .group-list, .group-members-list, .group-characters-list { display:flex; flex-direction:column; gap:10px; }
+        .group-item, .group-member-item, .group-character-item {
+          display:flex; justify-content:space-between; gap:12px; align-items:center;
+          padding:12px 14px; border-radius:14px; border:1px solid rgba(242,210,162,.14); background:rgba(18,10,10,.6);
+        }
+        .group-item.active { border-color: rgba(174, 35, 35, .65); box-shadow: 0 0 0 1px rgba(174,35,35,.25) inset; }
+        .group-meta, .group-member-meta, .group-character-meta { display:flex; flex-direction:column; gap:4px; }
+        .group-meta strong, .group-member-meta strong, .group-character-meta strong { color:#f6ead7; }
+        .group-meta small, .group-member-meta small, .group-character-meta small { color:var(--muted); }
+        .group-subgrid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+        .group-inline-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+        .group-select {
+          width:100%; margin-top:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(242,210,162,.15);
+          background:rgba(16,8,8,.86); color:#f6ead7;
+        }
+        .group-code-box {
+          display:flex; justify-content:space-between; gap:10px; align-items:center;
+          padding:10px 12px; margin-top:12px; border-radius:12px; background:rgba(35,15,15,.55); border:1px dashed rgba(242,210,162,.18);
+        }
+        .group-code-box code { font-size:16px; letter-spacing:2px; color:var(--gold); }
+        .group-empty { color:var(--muted); font-size:13px; }
         .tiny-badge {
           display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px;
           background:rgba(242,210,162,.1); color:var(--gold); font-size:11px;
@@ -1804,6 +1906,45 @@
                 <button class="small-btn" id="deleteCharacterBtn">Aktuellen löschen</button>
               </div>
               <div class="auth-note" id="currentCharacterInfo" style="margin-top:16px">Kein Charakter geladen.</div>
+              <label style="display:block; margin-top:14px">
+                <span>Aktiven Charakter Spielgruppe zuweisen</span>
+                <select id="characterGroupSelect" class="group-select">
+                  <option value="">Keine Spielgruppe</option>
+                </select>
+              </label>
+            </div>
+            <div class="dashboard-card" id="groupsCard">
+              <h3>Spielgruppen</h3>
+              <p>Baue deine Runde zusammen, teile den Einladungscode und wechsle nicht mehr zwischen Zettelwirtschaft und Tavernengerüchten.</p>
+              <div class="dashboard-buttons">
+                <button class="small-btn" id="createGroupBtn">Neue Spielgruppe</button>
+                <button class="small-btn" id="joinGroupBtn">Per Code beitreten</button>
+              </div>
+              <div class="group-list" id="groupList" style="margin-top:14px"></div>
+              <div class="group-code-box">
+                <div>
+                  <div class="group-empty">Einladungscode der ausgewählten Gruppe</div>
+                  <code id="selectedGroupCode">—</code>
+                </div>
+                <div class="group-inline-actions">
+                  <button class="utility-btn auth-btn" id="copyGroupCodeBtn">Code kopieren</button>
+                  <button class="utility-btn auth-btn" id="regenGroupCodeBtn">Code erneuern</button>
+                </div>
+              </div>
+              <div class="group-subgrid">
+                <div>
+                  <h4 style="margin:0 0 8px 0; color:var(--gold)">Mitglieder</h4>
+                  <div class="group-members-list" id="groupMembersList"></div>
+                </div>
+                <div>
+                  <h4 style="margin:0 0 8px 0; color:var(--gold)">Charaktere der Gruppe</h4>
+                  <div class="group-characters-list" id="groupCharactersList"></div>
+                </div>
+              </div>
+              <div class="group-inline-actions">
+                <button class="utility-btn auth-btn" id="leaveGroupBtn">Aus Gruppe austreten</button>
+              </div>
+              <div class="dashboard-status" id="groupsStatus"></div>
             </div>
             <div class="dashboard-card" id="adminUsersCard">
               <h3>Adminbereich</h3>
@@ -1839,6 +1980,18 @@
         characterList: $('characterList'),
         dashboardStatus: $('dashboardStatus'),
         currentCharacterInfo: $('currentCharacterInfo'),
+        characterGroupSelect: $('characterGroupSelect'),
+        groupsCard: $('groupsCard'),
+        groupList: $('groupList'),
+        groupMembersList: $('groupMembersList'),
+        groupCharactersList: $('groupCharactersList'),
+        selectedGroupCode: $('selectedGroupCode'),
+        copyGroupCodeBtn: $('copyGroupCodeBtn'),
+        regenGroupCodeBtn: $('regenGroupCodeBtn'),
+        leaveGroupBtn: $('leaveGroupBtn'),
+        groupsStatus: $('groupsStatus'),
+        createGroupBtn: $('createGroupBtn'),
+        joinGroupBtn: $('joinGroupBtn'),
         newCharacterBtn: $('newCharacterBtn'),
         duplicateCharacterBtn: $('duplicateCharacterBtn'),
         renameCharacterBtn: $('renameCharacterBtn'),
@@ -1887,6 +2040,20 @@
 
       function setAdminStatus(text) {
         authEls.adminStatus.textContent = text || '';
+      }
+
+      function setGroupsStatus(text) {
+        authEls.groupsStatus.textContent = text || '';
+      }
+
+      function getCurrentCharacterGroupId() {
+        const activeMeta = authState.characters.find(item => item.id === authState.currentCharacterId);
+        return activeMeta?.groupId ?? null;
+      }
+
+      function getGroupNameById(groupId) {
+        const group = authState.groups.find(item => item.id === groupId);
+        return group?.name || null;
       }
 
       function showLoginForms() {
@@ -1961,8 +2128,10 @@
           authEls.loginRegisterWrap.classList.add('hidden-section');
           authEls.charactersCard.classList.add('visible');
           authEls.actionsCard.classList.add('visible');
+          authEls.groupsCard.classList.add('visible');
           authEls.adminUsersCard.classList.toggle('visible', !!authState.user.isAdmin);
-          authEls.currentCharacterInfo.textContent = `Aktiv: ${getCharacterDisplayName()}`;
+          const currentGroupName = getGroupNameById(getCurrentCharacterGroupId());
+          authEls.currentCharacterInfo.textContent = `Aktiv: ${getCharacterDisplayName()}${currentGroupName ? ` · Gruppe: ${currentGroupName}` : ''}`;
         } else {
           authEls.userInfo.textContent = authState.localModeChosen
             ? 'Lokaler Modus aktiv – Speicherung nur in diesem Browser.'
@@ -1974,6 +2143,7 @@
           authEls.loginRegisterWrap.classList.add('hidden-section');
           authEls.charactersCard.classList.remove('visible');
           authEls.actionsCard.classList.remove('visible');
+          authEls.groupsCard.classList.remove('visible');
           authEls.adminUsersCard.classList.remove('visible');
           authEls.currentCharacterInfo.textContent = 'Kein Charakter geladen.';
         }
@@ -1993,6 +2163,7 @@
         authState.characters = payload.characters || [];
         authState.currentCharacterId = payload.activeCharacterId || authState.currentCharacterId;
         renderCharacterList();
+        renderCharacterGroupSelect();
         setAuthUi();
       }
 
@@ -2005,6 +2176,208 @@
         const payload = await fetchJson(`${API_BASE}/api/admin/users`);
         authState.adminUsers = payload.users || [];
         renderAdminPanel();
+      }
+
+
+      async function loadGroups() {
+        if (!authState.user) {
+          authState.groups = [];
+          authState.selectedGroupId = null;
+          authState.selectedGroupDetails = null;
+          renderGroupsPanel();
+          renderCharacterGroupSelect();
+          return;
+        }
+        const payload = await fetchJson(`${API_BASE}/api/groups`);
+        authState.groups = payload.groups || [];
+        if (authState.selectedGroupId && !authState.groups.some(g => g.id === authState.selectedGroupId)) {
+          authState.selectedGroupId = null;
+          authState.selectedGroupDetails = null;
+        }
+        if (!authState.selectedGroupId && authState.groups.length) {
+          authState.selectedGroupId = authState.groups[0].id;
+        }
+        if (authState.selectedGroupId) {
+          await loadSelectedGroupDetails();
+        } else {
+          authState.selectedGroupDetails = null;
+        }
+        renderGroupsPanel();
+        renderCharacterGroupSelect();
+      }
+
+      async function loadSelectedGroupDetails() {
+        if (!authState.user || !authState.selectedGroupId) {
+          authState.selectedGroupDetails = null;
+          renderGroupsPanel();
+          return;
+        }
+        const payload = await fetchJson(`${API_BASE}/api/groups/${authState.selectedGroupId}`);
+        authState.selectedGroupDetails = payload;
+        renderGroupsPanel();
+      }
+
+      function renderCharacterGroupSelect() {
+        if (!authEls.characterGroupSelect) return;
+        const current = getCurrentCharacterGroupId();
+        authEls.characterGroupSelect.innerHTML = `<option value="">Keine Spielgruppe</option>` + authState.groups.map(group => (
+          `<option value="${group.id}" ${Number(current) === Number(group.id) ? 'selected' : ''}>${escapeHtml(group.name)}</option>`
+        )).join('');
+      }
+
+      function renderGroupsPanel() {
+        authEls.groupList.innerHTML = '';
+        authEls.groupMembersList.innerHTML = '';
+        authEls.groupCharactersList.innerHTML = '';
+        const selected = authState.groups.find(group => group.id === authState.selectedGroupId) || null;
+        authEls.selectedGroupCode.textContent = selected?.inviteCode || '—';
+        authEls.regenGroupCodeBtn.style.display = selected && selected.role === 'owner' ? 'inline-flex' : 'none';
+        authEls.copyGroupCodeBtn.style.display = selected ? 'inline-flex' : 'inline-flex';
+        authEls.leaveGroupBtn.style.display = selected ? 'inline-flex' : 'none';
+
+        if (!authState.groups.length) {
+          authEls.groupList.innerHTML = `<div class="auth-note">Du bist noch in keiner Spielgruppe. Zeit, die Taverne zu eröffnen.</div>`;
+          authEls.groupMembersList.innerHTML = `<div class="group-empty">Noch keine Gruppe ausgewählt.</div>`;
+          authEls.groupCharactersList.innerHTML = `<div class="group-empty">Noch keine Gruppe ausgewählt.</div>`;
+          return;
+        }
+
+        authState.groups.forEach((group) => {
+          const item = document.createElement('div');
+          item.className = `group-item${group.id === authState.selectedGroupId ? ' active' : ''}`;
+          item.innerHTML = `
+            <div class="group-meta">
+              <strong>${escapeHtml(group.name)}</strong>
+              <small>${group.role === 'owner' ? 'Spielleitung / Besitzer' : 'Mitglied'} · ${escapeHtml(String(group.memberCount || 0))} Mitglieder · ${escapeHtml(String(group.characterCount || 0))} Charaktere</small>
+            </div>
+            <div class="dashboard-actions">
+              ${group.id === authState.selectedGroupId ? '<span class="tiny-badge">Ausgewählt</span>' : `<button class="utility-btn auth-btn select-group-btn" data-id="${group.id}">Öffnen</button>`}
+            </div>
+          `;
+          authEls.groupList.appendChild(item);
+        });
+
+        authEls.groupList.querySelectorAll('.select-group-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            authState.selectedGroupId = Number(btn.dataset.id);
+            await loadSelectedGroupDetails();
+            renderGroupsPanel();
+          });
+        });
+
+        const details = authState.selectedGroupDetails;
+        if (!details || !selected) {
+          authEls.groupMembersList.innerHTML = `<div class="group-empty">Gruppe wird geladen …</div>`;
+          authEls.groupCharactersList.innerHTML = `<div class="group-empty">Gruppe wird geladen …</div>`;
+          return;
+        }
+
+        if (!(details.members || []).length) {
+          authEls.groupMembersList.innerHTML = `<div class="group-empty">Noch keine Mitglieder.</div>`;
+        } else {
+          authEls.groupMembersList.innerHTML = details.members.map((member) => `
+            <div class="group-member-item">
+              <div class="group-member-meta">
+                <strong>${escapeHtml(member.displayName)} ${member.role === 'owner' ? '<span class="tiny-badge">Owner</span>' : ''}</strong>
+                <small>${escapeHtml(member.email || '')}</small>
+                <small>${escapeHtml(String(member.characterCount || 0))} Charaktere in dieser Gruppe</small>
+              </div>
+            </div>
+          `).join('');
+        }
+
+        if (!(details.characters || []).length) {
+          authEls.groupCharactersList.innerHTML = `<div class="group-empty">Noch keine Charaktere dieser Gruppe zugewiesen.</div>`;
+        } else {
+          authEls.groupCharactersList.innerHTML = details.characters.map((entry) => `
+            <div class="group-character-item">
+              <div class="group-character-meta">
+                <strong>${escapeHtml(entry.name || 'Unbenannter Charakter')}</strong>
+                <small>von ${escapeHtml(entry.ownerName || 'Unbekannt')}</small>
+              </div>
+            </div>
+          `).join('');
+        }
+      }
+
+      async function createGroup() {
+        const name = prompt('Name für die Spielgruppe:', 'Meine Heldengruppe');
+        if (!name) return;
+        const payload = await fetchJson(`${API_BASE}/api/groups`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() })
+        });
+        authState.selectedGroupId = payload.group.id;
+        await loadGroups();
+        setGroupsStatus(`Spielgruppe „${name.trim()}“ erstellt.`);
+        setTimeout(() => setGroupsStatus(''), 1800);
+      }
+
+      async function joinGroup() {
+        const inviteCode = prompt('Einladungscode eingeben:');
+        if (!inviteCode) return;
+        const payload = await fetchJson(`${API_BASE}/api/groups/join`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inviteCode: inviteCode.trim() })
+        });
+        authState.selectedGroupId = payload.group.id;
+        await loadGroups();
+        setGroupsStatus(`Du bist der Gruppe „${payload.group.name}“ beigetreten.`);
+        setTimeout(() => setGroupsStatus(''), 2000);
+      }
+
+      async function assignCurrentCharacterGroup(groupIdValue) {
+        if (!authState.user || !authState.currentCharacterId) return;
+        const groupId = groupIdValue ? Number(groupIdValue) : null;
+        await fetchJson(`${API_BASE}/api/characters/${authState.currentCharacterId}/group`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId })
+        });
+        await refreshCharactersList();
+        await loadGroups();
+        setAuthUi();
+        setGroupsStatus(groupId ? `Aktiver Charakter wurde der Gruppe „${getGroupNameById(groupId) || 'Unbekannt'}“ zugewiesen.` : 'Aktiver Charakter wurde aus der Spielgruppe entfernt.');
+        setTimeout(() => setGroupsStatus(''), 1800);
+      }
+
+      async function copyGroupCode() {
+        const selected = authState.groups.find(group => group.id === authState.selectedGroupId);
+        if (!selected?.inviteCode) return;
+        try {
+          await navigator.clipboard.writeText(selected.inviteCode);
+          setGroupsStatus('Einladungscode kopiert.');
+          setTimeout(() => setGroupsStatus(''), 1400);
+        } catch (_error) {
+          setGroupsStatus(`Code: ${selected.inviteCode}`);
+        }
+      }
+
+      async function regenerateGroupCode() {
+        if (!authState.selectedGroupId) return;
+        const selected = authState.groups.find(group => group.id === authState.selectedGroupId);
+        if (!selected || selected.role !== 'owner') return;
+        const payload = await fetchJson(`${API_BASE}/api/groups/${authState.selectedGroupId}/regenerate-code`, {
+          method: 'POST'
+        });
+        await loadGroups();
+        setGroupsStatus(`Neuer Einladungscode: ${payload.inviteCode}`);
+      }
+
+      async function leaveSelectedGroup() {
+        if (!authState.selectedGroupId) return;
+        const selected = authState.groups.find(group => group.id === authState.selectedGroupId);
+        if (!selected) return;
+        if (!confirm(`Wirklich die Spielgruppe „${selected.name}“ verlassen? Eigene Charaktere werden dabei aus der Gruppe gelöst.`)) return;
+        await fetchJson(`${API_BASE}/api/groups/${authState.selectedGroupId}/leave`, { method: 'POST' });
+        authState.selectedGroupId = null;
+        await refreshCharactersList();
+        await loadGroups();
+        setAuthUi();
+        setGroupsStatus(`Du hast „${selected.name}“ verlassen.`);
+        setTimeout(() => setGroupsStatus(''), 1800);
       }
 
       function renderCharacterList() {
@@ -2100,6 +2473,7 @@
           authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadGroups();
           await loadAdminUsers();
           setAuthUi();
           setLocked(false);
@@ -2108,6 +2482,9 @@
           authState.currentCharacterId = null;
           authState.characters = [];
           authState.adminUsers = [];
+          authState.groups = [];
+          authState.selectedGroupId = null;
+          authState.selectedGroupDetails = null;
           setAuthUi();
           if (!authState.localModeChosen) setLocked(true);
         }
@@ -2131,6 +2508,7 @@
           authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadGroups();
           await loadAdminUsers();
           authEls.registerSuccess.textContent = 'Account erstellt und dein aktueller Charakter wurde als erster Held gespeichert.';
           setAuthUi();
@@ -2155,6 +2533,7 @@
           authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadGroups();
           await loadAdminUsers();
           setAuthUi();
           setLocked(false);
@@ -2171,6 +2550,9 @@
           authState.currentCharacterId = null;
           authState.characters = [];
           authState.adminUsers = [];
+          authState.groups = [];
+          authState.selectedGroupId = null;
+          authState.selectedGroupDetails = null;
           authState.localModeChosen = false;
           setAuthUi();
           setLocked(true);
@@ -2256,6 +2638,43 @@
           console.error(error);
           authEls.userInfo.textContent = 'Speichern fehlgeschlagen.';
           setTimeout(setAuthUi, 1800);
+        }
+      });
+
+      authEls.characterGroupSelect.addEventListener('change', async (event) => {
+        try {
+          await assignCurrentCharacterGroup(event.target.value);
+        } catch (error) {
+          setGroupsStatus(error.message);
+        }
+      });
+      authEls.createGroupBtn.addEventListener('click', async () => {
+        try {
+          await createGroup();
+        } catch (error) {
+          setGroupsStatus(error.message);
+        }
+      });
+      authEls.joinGroupBtn.addEventListener('click', async () => {
+        try {
+          await joinGroup();
+        } catch (error) {
+          setGroupsStatus(error.message);
+        }
+      });
+      authEls.copyGroupCodeBtn.addEventListener('click', copyGroupCode);
+      authEls.regenGroupCodeBtn.addEventListener('click', async () => {
+        try {
+          await regenerateGroupCode();
+        } catch (error) {
+          setGroupsStatus(error.message);
+        }
+      });
+      authEls.leaveGroupBtn.addEventListener('click', async () => {
+        try {
+          await leaveSelectedGroup();
+        } catch (error) {
+          setGroupsStatus(error.message);
         }
       });
 

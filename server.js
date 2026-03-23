@@ -82,6 +82,119 @@ function migrateUsersTableIfNeeded() {
 }
 migrateUsersTableIfNeeded();
 
+function migrateGroupsTablesIfNeeded() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      owner_user_id INTEGER NOT NULL,
+      invite_code TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS group_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(group_id, user_id),
+      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
+    CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_groups_owner_user_id ON groups(owner_user_id);
+  `);
+
+  const characterCols = db.prepare(`PRAGMA table_info(characters)`).all().map(c => c.name);
+  if (!characterCols.includes('group_id')) {
+    db.exec(`ALTER TABLE characters ADD COLUMN group_id INTEGER`);
+  }
+}
+migrateGroupsTablesIfNeeded();
+
+function makeInviteCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < 8; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+function createUniqueInviteCode() {
+  let code = makeInviteCode();
+  while (db.prepare(`SELECT id FROM groups WHERE invite_code = ?`).get(code)) {
+    code = makeInviteCode();
+  }
+  return code;
+}
+
+function getUserGroups(userId) {
+  return db.prepare(`
+    SELECT
+      g.id,
+      g.name,
+      g.invite_code,
+      g.owner_user_id,
+      g.created_at,
+      g.updated_at,
+      gm.role,
+      (
+        SELECT COUNT(*) FROM group_members gm2 WHERE gm2.group_id = g.id
+      ) AS member_count,
+      (
+        SELECT COUNT(*) FROM characters c WHERE c.group_id = g.id
+      ) AS character_count
+    FROM groups g
+    INNER JOIN group_members gm ON gm.group_id = g.id
+    WHERE gm.user_id = ?
+    ORDER BY g.updated_at DESC, g.id DESC
+  `).all(userId).map(row => ({
+    id: row.id,
+    name: row.name,
+    inviteCode: row.invite_code,
+    ownerUserId: row.owner_user_id,
+    role: row.role,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    memberCount: row.member_count || 0,
+    characterCount: row.character_count || 0
+  }));
+}
+
+function getGroupForUser(groupId, userId) {
+  return db.prepare(`
+    SELECT
+      g.id,
+      g.name,
+      g.invite_code,
+      g.owner_user_id,
+      g.created_at,
+      g.updated_at,
+      gm.role
+    FROM groups g
+    INNER JOIN group_members gm ON gm.group_id = g.id
+    WHERE g.id = ? AND gm.user_id = ?
+    LIMIT 1
+  `).get(groupId, userId);
+}
+
+function ensureGroupOwnerStillMember(groupId, fallbackUserId) {
+  const ownerMember = db.prepare(`SELECT id FROM group_members WHERE group_id = ? AND role = 'owner' LIMIT 1`).get(groupId);
+  if (ownerMember) return;
+  const next = db.prepare(`SELECT user_id FROM group_members WHERE group_id = ? ORDER BY id ASC LIMIT 1`).get(groupId);
+  if (!next) {
+    db.prepare(`DELETE FROM groups WHERE id = ?`).run(groupId);
+    return;
+  }
+  db.prepare(`UPDATE group_members SET role = 'owner' WHERE group_id = ? AND user_id = ?`).run(groupId, next.user_id);
+  db.prepare(`UPDATE groups SET owner_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(next.user_id, groupId);
+}
+
+
 function isUserAdmin(user) {
   if (!user) return false;
   if (Number(user.is_admin || 0) === 1) return true;
@@ -144,7 +257,8 @@ function rowToCharacterMeta(row) {
     name: row.name,
     isActive: !!row.is_active,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    groupId: row.group_id || null
   };
 }
 
@@ -257,7 +371,7 @@ app.get('/api/me', authMiddleware, (req, res) => {
 
 app.get('/api/characters', authMiddleware, (req, res) => {
   const rows = db.prepare(`
-    SELECT id, name, is_active, created_at, updated_at
+    SELECT id, name, is_active, created_at, updated_at, group_id
     FROM characters
     WHERE user_id = ?
     ORDER BY is_active DESC, updated_at DESC, id DESC
@@ -274,6 +388,7 @@ app.post('/api/characters', authMiddleware, (req, res) => {
   const mode = String(req.body.mode || 'blank');
   const name = String(req.body.name || '').trim() || 'Neuer Charakter';
   let payload = {};
+  const requestedGroupId = req.body.groupId == null || req.body.groupId === '' ? null : Number(req.body.groupId);
 
   if (mode === 'duplicate') {
     const sourceId = Number(req.body.sourceCharacterId || 0);
@@ -286,13 +401,20 @@ app.post('/api/characters', authMiddleware, (req, res) => {
     payload = req.body.payload;
   }
 
+  let groupId = null;
+  if (requestedGroupId) {
+    const group = getGroupForUser(requestedGroupId, req.user.id);
+    if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+    groupId = requestedGroupId;
+  }
+
   const result = db.prepare(`
-    INSERT INTO characters (user_id, name, payload, is_active)
-    VALUES (?, ?, ?, 0)
-  `).run(req.user.id, name, JSON.stringify(payload));
+    INSERT INTO characters (user_id, name, payload, is_active, group_id)
+    VALUES (?, ?, ?, 0, ?)
+  `).run(req.user.id, name, JSON.stringify(payload), groupId);
 
   const row = db.prepare(`
-    SELECT id, name, is_active, created_at, updated_at
+    SELECT id, name, is_active, created_at, updated_at, group_id
     FROM characters
     WHERE id = ? AND user_id = ?
   `).get(result.lastInsertRowid, req.user.id);
@@ -303,7 +425,7 @@ app.post('/api/characters', authMiddleware, (req, res) => {
 app.get('/api/characters/:id', authMiddleware, (req, res) => {
   const characterId = Number(req.params.id);
   const row = db.prepare(`
-    SELECT id, name, payload, is_active, created_at, updated_at
+    SELECT id, name, payload, is_active, created_at, updated_at, group_id
     FROM characters
     WHERE id = ? AND user_id = ?
   `).get(characterId, req.user.id);
@@ -320,20 +442,31 @@ app.put('/api/characters/:id', authMiddleware, (req, res) => {
   const characterId = Number(req.params.id);
   const character = req.body.character;
   const newName = req.body.name;
+  const requestedGroupId = req.body.groupId === undefined ? undefined : (req.body.groupId === null || req.body.groupId === '' ? null : Number(req.body.groupId));
 
   if (!character || typeof character !== 'object') {
     return res.status(400).json({ error: 'Ungültige Charakterdaten.' });
   }
 
-  const existing = db.prepare(`SELECT id, name FROM characters WHERE id = ? AND user_id = ?`).get(characterId, req.user.id);
+  const existing = db.prepare(`SELECT id, name, group_id FROM characters WHERE id = ? AND user_id = ?`).get(characterId, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Charakter nicht gefunden.' });
 
   const name = String(newName || existing.name || 'Mein Charakter').trim() || 'Mein Charakter';
+  let groupId = existing.group_id || null;
+  if (requestedGroupId !== undefined) {
+    if (requestedGroupId === null) {
+      groupId = null;
+    } else {
+      const group = getGroupForUser(requestedGroupId, req.user.id);
+      if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+      groupId = requestedGroupId;
+    }
+  }
   db.prepare(`
     UPDATE characters
-    SET payload = ?, name = ?, updated_at = CURRENT_TIMESTAMP
+    SET payload = ?, name = ?, group_id = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
-  `).run(JSON.stringify(character), name, characterId, req.user.id);
+  `).run(JSON.stringify(character), name, groupId, characterId, req.user.id);
 
   res.json({ ok: true });
 });
@@ -377,34 +510,234 @@ app.get('/api/character', authMiddleware, (req, res) => {
     character: JSON.parse(row.payload),
     updatedAt: row.updated_at,
     activeCharacterId: row.id,
-    name: row.name
+    name: row.name,
+    groupId: row.group_id || null
   });
 });
 
 app.put('/api/character', authMiddleware, (req, res) => {
   const character = req.body.character;
   const name = String(req.body.name || '').trim();
+  const requestedGroupId = req.body.groupId === undefined ? undefined : (req.body.groupId === null || req.body.groupId === '' ? null : Number(req.body.groupId));
 
   if (!character || typeof character !== 'object') {
     return res.status(400).json({ error: 'Ungültige Charakterdaten.' });
   }
 
   let active = getActiveCharacterRow(req.user.id);
+  let targetGroupId = null;
+  if (requestedGroupId !== undefined) {
+    if (requestedGroupId === null) {
+      targetGroupId = null;
+    } else {
+      const group = getGroupForUser(requestedGroupId, req.user.id);
+      if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+      targetGroupId = requestedGroupId;
+    }
+  }
   if (!active) {
     const result = db.prepare(`
-      INSERT INTO characters (user_id, name, payload, is_active)
-      VALUES (?, ?, ?, 1)
-    `).run(req.user.id, name || 'Mein Charakter', JSON.stringify(character));
-    active = db.prepare(`SELECT id, name, payload, updated_at FROM characters WHERE id = ?`).get(result.lastInsertRowid);
+      INSERT INTO characters (user_id, name, payload, is_active, group_id)
+      VALUES (?, ?, ?, 1, ?)
+    `).run(req.user.id, name || 'Mein Charakter', JSON.stringify(character), targetGroupId);
+    active = db.prepare(`SELECT id, name, payload, updated_at, group_id FROM characters WHERE id = ?`).get(result.lastInsertRowid);
   } else {
     db.prepare(`
       UPDATE characters
-      SET payload = ?, name = ?, updated_at = CURRENT_TIMESTAMP
+      SET payload = ?, name = ?, group_id = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ? AND user_id = ?
-    `).run(JSON.stringify(character), name || active.name || 'Mein Charakter', active.id, req.user.id);
+    `).run(JSON.stringify(character), name || active.name || 'Mein Charakter', requestedGroupId === undefined ? (active.group_id || null) : targetGroupId, active.id, req.user.id);
   }
 
   res.json({ ok: true, activeCharacterId: active.id });
+});
+
+
+
+app.get('/api/groups', authMiddleware, (req, res) => {
+  res.json({ groups: getUserGroups(req.user.id) });
+});
+
+app.post('/api/groups', authMiddleware, (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Bitte einen Gruppennamen eingeben.' });
+
+  const inviteCode = createUniqueInviteCode();
+  const tx = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO groups (name, owner_user_id, invite_code)
+      VALUES (?, ?, ?)
+    `).run(name, req.user.id, inviteCode);
+    db.prepare(`
+      INSERT INTO group_members (group_id, user_id, role)
+      VALUES (?, ?, 'owner')
+    `).run(result.lastInsertRowid, req.user.id);
+    return result.lastInsertRowid;
+  });
+  const groupId = tx();
+  const group = getGroupForUser(groupId, req.user.id);
+  res.status(201).json({
+    group: {
+      id: group.id,
+      name: group.name,
+      inviteCode: group.invite_code,
+      ownerUserId: group.owner_user_id,
+      role: group.role,
+      createdAt: group.created_at,
+      updatedAt: group.updated_at,
+      memberCount: 1,
+      characterCount: 0
+    }
+  });
+});
+
+app.post('/api/groups/join', authMiddleware, (req, res) => {
+  const inviteCode = String(req.body.inviteCode || '').trim().toUpperCase();
+  if (!inviteCode) return res.status(400).json({ error: 'Bitte Einladungscode eingeben.' });
+
+  const group = db.prepare(`SELECT * FROM groups WHERE invite_code = ?`).get(inviteCode);
+  if (!group) return res.status(404).json({ error: 'Spielgruppe mit diesem Code nicht gefunden.' });
+
+  const existing = db.prepare(`SELECT id FROM group_members WHERE group_id = ? AND user_id = ?`).get(group.id, req.user.id);
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO group_members (group_id, user_id, role)
+      VALUES (?, ?, 'member')
+    `).run(group.id, req.user.id);
+  }
+  db.prepare(`UPDATE groups SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(group.id);
+  const joined = getGroupForUser(group.id, req.user.id);
+  res.json({
+    group: {
+      id: joined.id,
+      name: joined.name,
+      inviteCode: joined.invite_code,
+      ownerUserId: joined.owner_user_id,
+      role: joined.role,
+      createdAt: joined.created_at,
+      updatedAt: joined.updated_at
+    }
+  });
+});
+
+app.get('/api/groups/:id', authMiddleware, (req, res) => {
+  const groupId = Number(req.params.id);
+  const group = getGroupForUser(groupId, req.user.id);
+  if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+
+  const members = db.prepare(`
+    SELECT
+      u.id,
+      u.display_name,
+      u.email,
+      gm.role,
+      gm.created_at,
+      COUNT(c.id) AS character_count
+    FROM group_members gm
+    INNER JOIN users u ON u.id = gm.user_id
+    LEFT JOIN characters c ON c.user_id = u.id AND c.group_id = gm.group_id
+    WHERE gm.group_id = ?
+    GROUP BY u.id, gm.id
+    ORDER BY CASE gm.role WHEN 'owner' THEN 0 ELSE 1 END, u.display_name COLLATE NOCASE ASC
+  `).all(groupId).map(row => ({
+    id: row.id,
+    displayName: row.display_name,
+    email: row.email,
+    role: row.role,
+    joinedAt: row.created_at,
+    characterCount: row.character_count || 0
+  }));
+
+  const characters = db.prepare(`
+    SELECT
+      c.id,
+      c.name,
+      c.updated_at,
+      c.user_id,
+      u.display_name AS owner_name
+    FROM characters c
+    INNER JOIN users u ON u.id = c.user_id
+    WHERE c.group_id = ?
+    ORDER BY u.display_name COLLATE NOCASE ASC, c.name COLLATE NOCASE ASC
+  `).all(groupId).map(row => ({
+    id: row.id,
+    name: row.name,
+    updatedAt: row.updated_at,
+    userId: row.user_id,
+    ownerName: row.owner_name
+  }));
+
+  res.json({
+    group: {
+      id: group.id,
+      name: group.name,
+      inviteCode: group.invite_code,
+      ownerUserId: group.owner_user_id,
+      role: group.role,
+      createdAt: group.created_at,
+      updatedAt: group.updated_at
+    },
+    members,
+    characters
+  });
+});
+
+app.post('/api/groups/:id/regenerate-code', authMiddleware, (req, res) => {
+  const groupId = Number(req.params.id);
+  const group = getGroupForUser(groupId, req.user.id);
+  if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+  if (group.role !== 'owner') return res.status(403).json({ error: 'Nur der Gruppenleiter darf den Code erneuern.' });
+
+  const inviteCode = createUniqueInviteCode();
+  db.prepare(`UPDATE groups SET invite_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(inviteCode, groupId);
+
+  res.json({ inviteCode });
+});
+
+app.post('/api/groups/:id/leave', authMiddleware, (req, res) => {
+  const groupId = Number(req.params.id);
+  const group = getGroupForUser(groupId, req.user.id);
+  if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE characters SET group_id = NULL WHERE user_id = ? AND group_id = ?`).run(req.user.id, groupId);
+    db.prepare(`DELETE FROM group_members WHERE group_id = ? AND user_id = ?`).run(groupId, req.user.id);
+    if (group.role === 'owner') {
+      ensureGroupOwnerStillMember(groupId, req.user.id);
+    } else {
+      const count = db.prepare(`SELECT COUNT(*) AS count FROM group_members WHERE group_id = ?`).get(groupId);
+      if (!count || count.count === 0) {
+        db.prepare(`DELETE FROM groups WHERE id = ?`).run(groupId);
+      }
+    }
+    db.prepare(`UPDATE groups SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(groupId);
+  });
+  tx();
+
+  res.json({ ok: true });
+});
+
+app.post('/api/characters/:id/group', authMiddleware, (req, res) => {
+  const characterId = Number(req.params.id);
+  const requestedGroupId = req.body.groupId === null || req.body.groupId === '' || req.body.groupId === undefined
+    ? null
+    : Number(req.body.groupId);
+
+  const existing = db.prepare(`SELECT id FROM characters WHERE id = ? AND user_id = ?`).get(characterId, req.user.id);
+  if (!existing) return res.status(404).json({ error: 'Charakter nicht gefunden.' });
+
+  if (requestedGroupId !== null) {
+    const group = getGroupForUser(requestedGroupId, req.user.id);
+    if (!group) return res.status(404).json({ error: 'Spielgruppe nicht gefunden.' });
+  }
+
+  db.prepare(`
+    UPDATE characters
+    SET group_id = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND user_id = ?
+  `).run(requestedGroupId, characterId, req.user.id);
+
+  res.json({ ok: true, groupId: requestedGroupId });
 });
 
 
