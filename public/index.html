@@ -1606,10 +1606,16 @@
     render();
   </script>
 
+  
   <script>
     (() => {
       const API_BASE = '';
-      let authState = { user: null, saveTimer: null, loading: false };
+      let authState = {
+        user: null,
+        saveTimer: null,
+        currentCharacterId: null,
+        characters: []
+      };
 
       const style = document.createElement('style');
       style.textContent = `
@@ -1627,26 +1633,55 @@
         }
         .auth-backdrop.visible { display:flex; }
         .auth-modal {
-          width:min(960px, 100%); background: linear-gradient(180deg, rgba(30,18,18,.98), rgba(15,8,8,.98));
+          width:min(1100px, 100%); max-height:min(90vh, 1000px); overflow:auto;
+          background: linear-gradient(180deg, rgba(30,18,18,.98), rgba(15,8,8,.98));
           border:1px solid rgba(242,210,162,.16); border-radius:28px; box-shadow:0 30px 90px rgba(0,0,0,.45);
-          padding:24px; position:relative; overflow:hidden;
+          padding:24px; position:relative;
         }
         .auth-modal::after {
           content:"🐉"; position:absolute; right:16px; bottom:6px; opacity:.05; font-size:clamp(64px, 12vw, 140px);
           transform:scaleX(-1) rotate(-8deg); pointer-events:none;
         }
         .auth-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:20px; }
-        .auth-card {
+        .auth-card, .dashboard-card {
           background:rgba(22,12,12,.65); border:1px solid rgba(198,40,40,.18); border-radius:22px; padding:18px;
         }
-        .auth-card h3 { margin:0 0 8px 0; color:var(--gold); }
-        .auth-card p { color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 14px 0; }
+        .auth-card h3, .dashboard-card h3 { margin:0 0 8px 0; color:var(--gold); }
+        .auth-card p, .dashboard-card p { color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 14px 0; }
         .auth-note { color:var(--soft); font-size:13px; margin-top:12px; }
         .auth-error, .auth-success { min-height:20px; font-size:13px; margin-top:10px; }
         .auth-error { color:#fca5a5; }
         .auth-success { color:#bbf7d0; }
+        .dashboard-wrap { display:grid; grid-template-columns: 1.1fr .9fr; gap:20px; margin-top:20px; }
+        .dashboard-card { display:none; }
+        .dashboard-card.visible { display:block; }
+        .character-list { display:grid; gap:12px; }
+        .character-item {
+          display:flex; justify-content:space-between; align-items:center; gap:12px;
+          padding:12px 14px; border-radius:16px; border:1px solid rgba(242,210,162,.12); background:rgba(0,0,0,.18);
+        }
+        .character-item.active {
+          border-color: rgba(242,210,162,.35);
+          box-shadow: 0 0 0 1px rgba(242,210,162,.18) inset;
+          background: rgba(198,40,40,.12);
+        }
+        .character-meta strong { display:block; font-size:15px; }
+        .character-meta small { color:var(--muted); }
+        .dashboard-actions, .dashboard-buttons { display:flex; gap:10px; flex-wrap:wrap; }
+        .dashboard-buttons { margin-top:14px; }
+        .dashboard-status { font-size:13px; min-height:18px; color:var(--muted); margin-top:10px; }
+        .tiny-badge {
+          display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px;
+          background:rgba(242,210,162,.1); color:var(--gold); font-size:11px;
+        }
+        .hidden-section { display:none !important; }
         .app-locked .container { filter: blur(6px); pointer-events:none; user-select:none; }
-        @media (max-width: 760px) { .auth-grid { grid-template-columns:1fr; } }
+        @media (max-width: 900px) {
+          .dashboard-wrap { grid-template-columns:1fr; }
+        }
+        @media (max-width: 760px) {
+          .auth-grid { grid-template-columns:1fr; }
+        }
       `;
       document.head.appendChild(style);
 
@@ -1670,8 +1705,9 @@
         <div class="auth-modal">
           <div class="eyebrow">Servermodus</div>
           <h2 style="margin-top:0">Dein Charakterbogen mit Account</h2>
-          <p class="subtitle" style="margin-top:8px">Jede Person bekommt einen eigenen Login. Nach dem Einloggen wird dein Charakter auf dem Server gespeichert statt nur im Browser.</p>
-          <div class="auth-grid">
+          <p class="subtitle" style="margin-top:8px">Mit Login werden deine Charaktere am Server gespeichert. Und ja: endlich gibt es ein kleines Dashboard zum Wechseln, statt Charaktere wie Socken umzubenennen.</p>
+
+          <div class="auth-grid" id="authLoginRegister">
             <div class="auth-card">
               <h3>Einloggen</h3>
               <p>Für bestehende Heldinnen, Helden und sonstige chaotische Wesen.</p>
@@ -1691,6 +1727,27 @@
               <div class="auth-success" id="registerSuccess"></div>
             </div>
           </div>
+
+          <div class="dashboard-wrap">
+            <div class="dashboard-card" id="dashboardCharactersCard">
+              <h3>Charakter-Dashboard</h3>
+              <p>Hier kannst du zwischen deinen Charakteren wechseln, neue anlegen oder den aktuellen duplizieren.</p>
+              <div class="character-list" id="characterList"></div>
+              <div class="dashboard-status" id="dashboardStatus"></div>
+            </div>
+            <div class="dashboard-card" id="dashboardActionsCard">
+              <h3>Aktionen</h3>
+              <p>Der aktive Charakter wird automatisch gespeichert. Wechseln, duplizieren, löschen – alles hier, ganz ohne JSON-Akrobatik.</p>
+              <div class="dashboard-buttons">
+                <button class="small-btn" id="newCharacterBtn">Neuen Charakter</button>
+                <button class="small-btn" id="duplicateCharacterBtn">Aktuellen duplizieren</button>
+                <button class="small-btn" id="renameCharacterBtn">Aktuellen umbenennen</button>
+                <button class="small-btn" id="deleteCharacterBtn">Aktuellen löschen</button>
+              </div>
+              <div class="auth-note" id="currentCharacterInfo" style="margin-top:16px">Kein Charakter geladen.</div>
+            </div>
+          </div>
+
           <div class="auth-note">Hinweis: Ohne Login läuft der Bogen weiterhin lokal im Browser. Mit Login synchronisiert er automatisch mit dem Server.</div>
         </div>
       `;
@@ -1703,6 +1760,16 @@
         syncNowBtn: $('syncNowBtn'),
         logoutBtn: $('logoutBtn'),
         backdrop: $('authBackdrop'),
+        loginRegisterWrap: $('authLoginRegister'),
+        charactersCard: $('dashboardCharactersCard'),
+        actionsCard: $('dashboardActionsCard'),
+        characterList: $('characterList'),
+        dashboardStatus: $('dashboardStatus'),
+        currentCharacterInfo: $('currentCharacterInfo'),
+        newCharacterBtn: $('newCharacterBtn'),
+        duplicateCharacterBtn: $('duplicateCharacterBtn'),
+        renameCharacterBtn: $('renameCharacterBtn'),
+        deleteCharacterBtn: $('deleteCharacterBtn'),
         loginEmail: $('loginEmail'),
         loginPassword: $('loginPassword'),
         loginSubmitBtn: $('loginSubmitBtn'),
@@ -1716,18 +1783,14 @@
       };
 
       const originalSaveCharacter = saveCharacter;
+
       saveCharacter = function patchedSaveCharacter() {
         originalSaveCharacter();
-        if (!authState.user) return;
+        if (!authState.user || !authState.currentCharacterId) return;
         clearTimeout(authState.saveTimer);
         authState.saveTimer = setTimeout(async () => {
           try {
-            await fetch(`${API_BASE}/api/character`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ character })
-            });
+            await saveCurrentCharacterToServer();
           } catch (error) {
             console.error('Autosave fehlgeschlagen', error);
           }
@@ -1739,55 +1802,152 @@
         authEls.backdrop.classList.toggle('visible', locked);
       }
 
+      function getCharacterDisplayName() {
+        const localName = String(character?.name || '').trim();
+        const activeMeta = authState.characters.find(item => item.id === authState.currentCharacterId);
+        return localName || activeMeta?.name || 'Unbenannter Charakter';
+      }
+
+      function setDashboardStatus(text) {
+        authEls.dashboardStatus.textContent = text || '';
+      }
+
       function setAuthUi() {
         if (authState.user) {
-          authEls.userInfo.textContent = `Eingeloggt als ${authState.user.displayName} (${authState.user.email})`;
+          const activeLabel = authState.currentCharacterId ? ` – aktiv: ${getCharacterDisplayName()}` : '';
+          authEls.userInfo.textContent = `Eingeloggt als ${authState.user.displayName} (${authState.user.email})${activeLabel}`;
           authEls.syncNowBtn.classList.remove('hidden');
           authEls.logoutBtn.classList.remove('hidden');
-          authEls.openBtn.textContent = 'Account';
+          authEls.openBtn.textContent = 'Charaktere / Account';
+          authEls.loginRegisterWrap.classList.add('hidden-section');
+          authEls.charactersCard.classList.add('visible');
+          authEls.actionsCard.classList.add('visible');
+          authEls.currentCharacterInfo.textContent = `Aktiv: ${getCharacterDisplayName()}`;
         } else {
           authEls.userInfo.textContent = 'Nicht eingeloggt – lokal spielbar, mit Login aber servergespeichert.';
           authEls.syncNowBtn.classList.add('hidden');
           authEls.logoutBtn.classList.add('hidden');
           authEls.openBtn.textContent = 'Login / Account';
+          authEls.loginRegisterWrap.classList.remove('hidden-section');
+          authEls.charactersCard.classList.remove('visible');
+          authEls.actionsCard.classList.remove('visible');
+          authEls.currentCharacterInfo.textContent = 'Kein Charakter geladen.';
         }
       }
 
-      async function pullCharacterFromServer() {
-        const response = await fetch(`${API_BASE}/api/character`, { credentials: 'include' });
-        if (!response.ok) throw new Error('Charakter konnte nicht geladen werden.');
-        const payload = await response.json();
+      async function fetchJson(url, options = {}) {
+        const response = await fetch(url, { credentials: 'include', ...options });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Anfrage fehlgeschlagen.');
+        return payload;
+      }
+
+      async function refreshCharactersList() {
+        if (!authState.user) return;
+        const payload = await fetchJson(`${API_BASE}/api/characters`);
+        authState.characters = payload.characters || [];
+        authState.currentCharacterId = payload.activeCharacterId || authState.currentCharacterId;
+        renderCharacterList();
+        setAuthUi();
+      }
+
+      function renderCharacterList() {
+        const activeId = authState.currentCharacterId;
+        authEls.characterList.innerHTML = '';
+        if (!authState.characters.length) {
+          authEls.characterList.innerHTML = `<div class="auth-note">Noch keine Charaktere vorhanden.</div>`;
+          return;
+        }
+
+        authState.characters.forEach((entry) => {
+          const item = document.createElement('div');
+          item.className = `character-item${entry.id === activeId ? ' active' : ''}`;
+          const updated = entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('de-AT') : '–';
+          item.innerHTML = `
+            <div class="character-meta">
+              <strong>${escapeHtml(entry.name || 'Unbenannter Charakter')}</strong>
+              <small>Zuletzt gespeichert: ${escapeHtml(updated)}</small>
+            </div>
+            <div class="dashboard-actions">
+              ${entry.id === activeId ? '<span class="tiny-badge">Aktiv</span>' : `<button class="utility-btn auth-btn switch-btn" data-id="${entry.id}">Laden</button>`}
+            </div>
+          `;
+          authEls.characterList.appendChild(item);
+        });
+
+        authEls.characterList.querySelectorAll('.switch-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.id);
+            try {
+              setDashboardStatus('Charakter wird geladen …');
+              await switchCharacter(id);
+              setDashboardStatus('Charakter geladen.');
+              setTimeout(() => setDashboardStatus(''), 1500);
+            } catch (error) {
+              setDashboardStatus(error.message);
+            }
+          });
+        });
+      }
+
+      async function loadActiveCharacterFromServer() {
+        const payload = await fetchJson(`${API_BASE}/api/character`);
+        authState.currentCharacterId = payload.activeCharacterId || null;
         character = mergeCharacter(payload.character || {});
+        if (payload.name && !String(character.name || '').trim()) character.name = payload.name;
         updateDerivedValues();
         originalSaveCharacter();
         render();
       }
 
-      async function pushCharacterNow() {
-        if (!authState.user) return;
-        await fetch(`${API_BASE}/api/character`, {
+      async function switchCharacter(characterId) {
+        await fetchJson(`${API_BASE}/api/characters/${characterId}/activate`, { method: 'POST' });
+        const payload = await fetchJson(`${API_BASE}/api/characters/${characterId}`);
+        authState.currentCharacterId = characterId;
+        character = mergeCharacter(payload.character || {});
+        if (payload.meta?.name && !String(character.name || '').trim()) character.name = payload.meta.name;
+        updateDerivedValues();
+        originalSaveCharacter();
+        render();
+        await refreshCharactersList();
+      }
+
+      async function saveCurrentCharacterToServer() {
+        if (!authState.user || !authState.currentCharacterId) return;
+        const name = String(character?.name || '').trim() || getCharacterDisplayName();
+        await fetchJson(`${API_BASE}/api/characters/${authState.currentCharacterId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ character })
+          body: JSON.stringify({ character, name })
         });
+        await refreshCharactersList();
+      }
+
+      async function pushCharacterNow() {
+        if (!authState.user) return;
+        if (authState.currentCharacterId) {
+          await saveCurrentCharacterToServer();
+          return;
+        }
+        await fetchJson(`${API_BASE}/api/character`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ character, name: String(character?.name || '').trim() || 'Mein Charakter' })
+        });
+        await refreshCharactersList();
       }
 
       async function loadSession() {
         try {
-          const response = await fetch(`${API_BASE}/api/me`, { credentials: 'include' });
-          if (!response.ok) {
-            authState.user = null;
-            setAuthUi();
-            return;
-          }
-          const payload = await response.json();
+          const payload = await fetchJson(`${API_BASE}/api/me`);
           authState.user = payload.user;
+          await refreshCharactersList();
+          await loadActiveCharacterFromServer();
           setAuthUi();
-          await pullCharacterFromServer();
         } catch (error) {
-          console.error(error);
           authState.user = null;
+          authState.currentCharacterId = null;
+          authState.characters = [];
           setAuthUi();
         }
       }
@@ -1796,22 +1956,21 @@
         authEls.registerError.textContent = '';
         authEls.registerSuccess.textContent = '';
         try {
-          const response = await fetch(`${API_BASE}/api/register`, {
+          const payload = await fetchJson(`${API_BASE}/api/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({
               displayName: authEls.registerName.value.trim(),
               email: authEls.registerEmail.value.trim(),
-              password: authEls.registerPassword.value
+              password: authEls.registerPassword.value,
+              initialCharacter: character
             })
           });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || 'Registrierung fehlgeschlagen.');
           authState.user = payload.user;
+          await refreshCharactersList();
+          await loadActiveCharacterFromServer();
+          authEls.registerSuccess.textContent = 'Account erstellt und dein aktueller Charakter wurde als erster Held gespeichert.';
           setAuthUi();
-          await pushCharacterNow();
-          authEls.registerSuccess.textContent = 'Account erstellt und aktueller Charakter gespeichert.';
           setLocked(false);
         } catch (error) {
           authEls.registerError.textContent = error.message;
@@ -1821,20 +1980,18 @@
       async function login() {
         authEls.loginError.textContent = '';
         try {
-          const response = await fetch(`${API_BASE}/api/login`, {
+          const payload = await fetchJson(`${API_BASE}/api/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({
               email: authEls.loginEmail.value.trim(),
               password: authEls.loginPassword.value
             })
           });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || 'Login fehlgeschlagen.');
           authState.user = payload.user;
+          await refreshCharactersList();
+          await loadActiveCharacterFromServer();
           setAuthUi();
-          await pullCharacterFromServer();
           setLocked(false);
         } catch (error) {
           authEls.loginError.textContent = error.message;
@@ -1843,12 +2000,60 @@
 
       async function logout() {
         try {
-          await fetch(`${API_BASE}/api/logout`, { method: 'POST', credentials: 'include' });
+          await fetchJson(`${API_BASE}/api/logout`, { method: 'POST' });
         } finally {
           authState.user = null;
+          authState.currentCharacterId = null;
+          authState.characters = [];
           setAuthUi();
           setLocked(false);
         }
+      }
+
+      async function createCharacter(mode) {
+        if (!authState.user) return;
+        const defaultName = mode === 'duplicate'
+          ? `${getCharacterDisplayName()} Kopie`
+          : 'Neuer Charakter';
+        const chosenName = prompt('Name für den Charakter:', defaultName);
+        if (!chosenName) return;
+        const payload = await fetchJson(`${API_BASE}/api/characters`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode,
+            name: chosenName.trim(),
+            sourceCharacterId: authState.currentCharacterId,
+            payload: mode === 'blank' ? {} : undefined
+          })
+        });
+        await switchCharacter(payload.character.id);
+        setDashboardStatus(`Charakter „${chosenName.trim()}“ erstellt.`);
+        setTimeout(() => setDashboardStatus(''), 1800);
+      }
+
+      async function renameCharacter() {
+        if (!authState.user || !authState.currentCharacterId) return;
+        const newName = prompt('Neuer Name für den aktuellen Charakter:', getCharacterDisplayName());
+        if (!newName) return;
+        character.name = newName.trim();
+        updateDerivedValues();
+        originalSaveCharacter();
+        render();
+        await saveCurrentCharacterToServer();
+        setDashboardStatus('Charakter umbenannt.');
+        setTimeout(() => setDashboardStatus(''), 1800);
+      }
+
+      async function deleteCurrentCharacter() {
+        if (!authState.user || !authState.currentCharacterId) return;
+        const currentName = getCharacterDisplayName();
+        if (!confirm(`Wirklich „${currentName}“ löschen?`)) return;
+        await fetchJson(`${API_BASE}/api/characters/${authState.currentCharacterId}`, { method: 'DELETE' });
+        await refreshCharactersList();
+        await loadActiveCharacterFromServer();
+        setDashboardStatus(`„${currentName}“ wurde gelöscht.`);
+        setTimeout(() => setDashboardStatus(''), 1800);
       }
 
       authEls.openBtn.addEventListener('click', () => setLocked(true));
@@ -1858,6 +2063,10 @@
       authEls.loginSubmitBtn.addEventListener('click', login);
       authEls.registerSubmitBtn.addEventListener('click', register);
       authEls.logoutBtn.addEventListener('click', logout);
+      authEls.newCharacterBtn.addEventListener('click', () => createCharacter('blank'));
+      authEls.duplicateCharacterBtn.addEventListener('click', () => createCharacter('duplicate'));
+      authEls.renameCharacterBtn.addEventListener('click', renameCharacter);
+      authEls.deleteCharacterBtn.addEventListener('click', deleteCurrentCharacter);
       authEls.syncNowBtn.addEventListener('click', async () => {
         try {
           await pushCharacterNow();
@@ -1874,6 +2083,7 @@
       loadSession();
     })();
   </script>
+
 
 </body>
 </html>
