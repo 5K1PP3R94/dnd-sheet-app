@@ -1,0 +1,29 @@
+
+services:
+  dnd-sheet:
+    build: .
+    container_name: dnd-sheet
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      JWT_SECRET: "BITTE_HIER_EIN_LANGES_ZUFAELLIGES_SECRET_EINTRAGEN"
+      DB_PATH: "/app/data/app.db"
+    volumes:
+      - dnd_sheet_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dnd-sheet.rule=Host(`dnd.example.com`)"
+      - "traefik.http.routers.dnd-sheet.entrypoints=websecure"
+      - "traefik.http.routers.dnd-sheet.tls.certresolver=letsencrypt"
+      - "traefik.http.services.dnd-sheet.loadbalancer.server.port=3000"
+    networks:
+      - traefik
+      - internal
+
+volumes:
+  dnd_sheet_data:
+
+networks:
+  traefik:
+    external: true
+  internal:
