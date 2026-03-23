@@ -1614,7 +1614,9 @@
         user: null,
         saveTimer: null,
         currentCharacterId: null,
-        characters: []
+        characters: [],
+        localModeChosen: false,
+        adminUsers: []
       };
 
       const style = document.createElement('style');
@@ -1676,6 +1678,46 @@
         }
         .hidden-section { display:none !important; }
         .app-locked .container { filter: blur(6px); pointer-events:none; user-select:none; }
+        .landing-panel {
+          margin-bottom: 18px;
+          padding: 22px;
+          border-radius: 24px;
+          border: 1px solid rgba(242,210,162,.16);
+          background:
+            radial-gradient(circle at top right, rgba(198,40,40,.16), transparent 35%),
+            linear-gradient(180deg, rgba(41,14,14,.94), rgba(17,8,8,.96));
+          position: relative;
+          overflow: hidden;
+        }
+        .landing-panel::after {
+          content:"⚔️";
+          position:absolute; right:18px; top:10px; font-size: clamp(48px, 10vw, 96px);
+          opacity:.06; pointer-events:none;
+        }
+        .landing-actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; }
+        .landing-btn-primary {
+          background: linear-gradient(180deg, rgba(127,29,29,.96), rgba(83,16,16,.98));
+          border-color: rgba(242,210,162,.26);
+          color: var(--gold);
+        }
+        .landing-btn-secondary {
+          background: linear-gradient(180deg, rgba(44,24,24,.96), rgba(23,12,12,.98));
+        }
+        .admin-list { display:grid; gap:10px; margin-top:14px; }
+        .admin-item {
+          display:grid;
+          grid-template-columns: minmax(0, 1.4fr) auto;
+          gap:12px;
+          align-items:center;
+          padding:12px 14px;
+          border-radius:16px;
+          border:1px solid rgba(242,210,162,.10);
+          background:rgba(0,0,0,.16);
+        }
+        .admin-meta strong { display:block; }
+        .admin-meta small { display:block; color:var(--muted); margin-top:3px; }
+        .admin-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+        .admin-stats { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
         @media (max-width: 900px) {
           .dashboard-wrap { grid-template-columns:1fr; }
         }
@@ -1703,11 +1745,20 @@
       backdrop.id = 'authBackdrop';
       backdrop.innerHTML = `
         <div class="auth-modal">
-          <div class="eyebrow">Servermodus</div>
-          <h2 style="margin-top:0">Dein Charakterbogen mit Account</h2>
-          <p class="subtitle" style="margin-top:8px">Mit Login werden deine Charaktere am Server gespeichert. Und ja: endlich gibt es ein kleines Dashboard zum Wechseln, statt Charaktere wie Socken umzubenennen.</p>
+          <div class="eyebrow">Abenteuer beginnt hier</div>
+          <h2 style="margin-top:0">Willkommen im DnD Charakterbogen</h2>
+          <p class="subtitle" style="margin-top:8px">Mit Account landen deine Heldinnen, Helden und Chaos-Goblins sicher am Server. Oder du spielst einfach lokal im Browser weiter – ganz ohne Login, ganz ohne Drama.</p>
 
-          <div class="auth-grid" id="authLoginRegister">
+          <div class="landing-panel" id="landingPanel">
+            <h3 style="margin-top:0; color:var(--gold)">Wie willst du starten?</h3>
+            <p style="margin:8px 0 0 0; color:var(--muted); line-height:1.6">Servermodus für Login, mehrere Charaktere und Sync. Lokaler Modus, wenn du einfach sofort losspielen willst und alles nur auf diesem Gerät gespeichert werden soll.</p>
+            <div class="landing-actions">
+              <button class="small-btn landing-btn-primary" id="showLoginChoiceBtn">Mit Login / Account starten</button>
+              <button class="small-btn landing-btn-secondary" id="continueLocalBtn">Ohne Login lokal starten</button>
+            </div>
+          </div>
+
+          <div class="auth-grid hidden-section" id="authLoginRegister">
             <div class="auth-card">
               <h3>Einloggen</h3>
               <p>Für bestehende Heldinnen, Helden und sonstige chaotische Wesen.</p>
@@ -1746,9 +1797,16 @@
               </div>
               <div class="auth-note" id="currentCharacterInfo" style="margin-top:16px">Kein Charakter geladen.</div>
             </div>
+            <div class="dashboard-card" id="adminUsersCard">
+              <h3>Adminbereich</h3>
+              <p>Benutzerübersicht für den Dungeon Master hinter den Kulissen. Hier kannst du Accounts einsehen und notfalls löschen.</p>
+              <div class="admin-stats" id="adminStats"></div>
+              <div class="admin-list" id="adminUserList"></div>
+              <div class="dashboard-status" id="adminStatus"></div>
+            </div>
           </div>
 
-          <div class="auth-note">Hinweis: Ohne Login läuft der Bogen weiterhin lokal im Browser. Mit Login synchronisiert er automatisch mit dem Server.</div>
+          <div class="auth-note">Hinweis: Lokaler Modus speichert nur auf diesem Gerät. Mit Login landen deine Daten am Server. Adminzugang erhält standardmäßig der erste registrierte Account.</div>
         </div>
       `;
       document.body.appendChild(backdrop);
@@ -1760,9 +1818,16 @@
         syncNowBtn: $('syncNowBtn'),
         logoutBtn: $('logoutBtn'),
         backdrop: $('authBackdrop'),
+        landingPanel: $('landingPanel'),
+        showLoginChoiceBtn: $('showLoginChoiceBtn'),
+        continueLocalBtn: $('continueLocalBtn'),
         loginRegisterWrap: $('authLoginRegister'),
         charactersCard: $('dashboardCharactersCard'),
         actionsCard: $('dashboardActionsCard'),
+        adminUsersCard: $('adminUsersCard'),
+        adminStats: $('adminStats'),
+        adminUserList: $('adminUserList'),
+        adminStatus: $('adminStatus'),
         characterList: $('characterList'),
         dashboardStatus: $('dashboardStatus'),
         currentCharacterInfo: $('currentCharacterInfo'),
@@ -1812,27 +1877,99 @@
         authEls.dashboardStatus.textContent = text || '';
       }
 
+      function setAdminStatus(text) {
+        authEls.adminStatus.textContent = text || '';
+      }
+
+      function showLoginForms() {
+        authState.localModeChosen = false;
+        authEls.landingPanel.classList.add('hidden-section');
+        authEls.loginRegisterWrap.classList.remove('hidden-section');
+        setLocked(true);
+      }
+
+      function continueLocalMode() {
+        authState.localModeChosen = true;
+        authEls.landingPanel.classList.remove('hidden-section');
+        authEls.loginRegisterWrap.classList.add('hidden-section');
+        setLocked(false);
+        setAuthUi();
+      }
+
+      function renderAdminPanel() {
+        authEls.adminStats.innerHTML = '';
+        authEls.adminUserList.innerHTML = '';
+        if (!authState.user?.isAdmin) return;
+        authEls.adminStats.innerHTML = `
+          <span class="tiny-badge">${authState.adminUsers.length} Benutzer</span>
+          <span class="tiny-badge">${authState.characters.length} eigene Charaktere aktiv sichtbar</span>
+        `;
+        if (!authState.adminUsers.length) {
+          authEls.adminUserList.innerHTML = '<div class="auth-note">Keine Benutzer gefunden.</div>';
+          return;
+        }
+        authState.adminUsers.forEach((user) => {
+          const row = document.createElement('div');
+          row.className = 'admin-item';
+          const created = user.createdAt ? new Date(user.createdAt).toLocaleString('de-AT') : '–';
+          const updated = user.lastCharacterUpdate ? new Date(user.lastCharacterUpdate).toLocaleString('de-AT') : 'noch nie';
+          row.innerHTML = `
+            <div class="admin-meta">
+              <strong>${escapeHtml(user.displayName || 'Unbenannt')} ${user.isAdmin ? '<span class="tiny-badge">Admin</span>' : ''}</strong>
+              <small>${escapeHtml(user.email || '')}</small>
+              <small>Erstellt: ${escapeHtml(created)} · Charaktere: ${escapeHtml(String(user.characterCount || 0))} · Letzter Save: ${escapeHtml(updated)}</small>
+            </div>
+            <div class="admin-actions">
+              ${user.id === authState.user.id ? '<span class="tiny-badge">Du</span>' : `<button class="utility-btn auth-btn admin-delete-btn" data-id="${user.id}" data-name="${escapeHtml(user.displayName || user.email || 'Benutzer')}">Löschen</button>`}
+            </div>
+          `;
+          authEls.adminUserList.appendChild(row);
+        });
+        authEls.adminUserList.querySelectorAll('.admin-delete-btn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = Number(btn.dataset.id);
+            const name = btn.dataset.name;
+            if (!confirm(`Wirklich Benutzer „${name}“ samt Charakteren löschen?`)) return;
+            try {
+              await fetchJson(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE' });
+              setAdminStatus(`Benutzer „${name}“ gelöscht.`);
+              await loadAdminUsers();
+              setTimeout(() => setAdminStatus(''), 1800);
+            } catch (error) {
+              setAdminStatus(error.message);
+            }
+          });
+        });
+      }
+
       function setAuthUi() {
         if (authState.user) {
           const activeLabel = authState.currentCharacterId ? ` – aktiv: ${getCharacterDisplayName()}` : '';
           authEls.userInfo.textContent = `Eingeloggt als ${authState.user.displayName} (${authState.user.email})${activeLabel}`;
           authEls.syncNowBtn.classList.remove('hidden');
           authEls.logoutBtn.classList.remove('hidden');
-          authEls.openBtn.textContent = 'Charaktere / Account';
+          authEls.openBtn.textContent = authState.user.isAdmin ? 'Dashboard / Admin' : 'Charaktere / Account';
+          authEls.landingPanel.classList.add('hidden-section');
           authEls.loginRegisterWrap.classList.add('hidden-section');
           authEls.charactersCard.classList.add('visible');
           authEls.actionsCard.classList.add('visible');
+          authEls.adminUsersCard.classList.toggle('visible', !!authState.user.isAdmin);
           authEls.currentCharacterInfo.textContent = `Aktiv: ${getCharacterDisplayName()}`;
         } else {
-          authEls.userInfo.textContent = 'Nicht eingeloggt – lokal spielbar, mit Login aber servergespeichert.';
+          authEls.userInfo.textContent = authState.localModeChosen
+            ? 'Lokaler Modus aktiv – Speicherung nur in diesem Browser.'
+            : 'Nicht eingeloggt – lokal spielbar, mit Login aber servergespeichert.';
           authEls.syncNowBtn.classList.add('hidden');
           authEls.logoutBtn.classList.add('hidden');
           authEls.openBtn.textContent = 'Login / Account';
-          authEls.loginRegisterWrap.classList.remove('hidden-section');
+          authEls.landingPanel.classList.remove('hidden-section');
+          authEls.loginRegisterWrap.classList.add('hidden-section');
           authEls.charactersCard.classList.remove('visible');
           authEls.actionsCard.classList.remove('visible');
+          authEls.adminUsersCard.classList.remove('visible');
           authEls.currentCharacterInfo.textContent = 'Kein Charakter geladen.';
         }
+        renderAdminPanel();
       }
 
       async function fetchJson(url, options = {}) {
@@ -1849,6 +1986,17 @@
         authState.currentCharacterId = payload.activeCharacterId || authState.currentCharacterId;
         renderCharacterList();
         setAuthUi();
+      }
+
+      async function loadAdminUsers() {
+        if (!authState.user?.isAdmin) {
+          authState.adminUsers = [];
+          renderAdminPanel();
+          return;
+        }
+        const payload = await fetchJson(`${API_BASE}/api/admin/users`);
+        authState.adminUsers = payload.users || [];
+        renderAdminPanel();
       }
 
       function renderCharacterList() {
@@ -1941,14 +2089,19 @@
         try {
           const payload = await fetchJson(`${API_BASE}/api/me`);
           authState.user = payload.user;
+          authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadAdminUsers();
           setAuthUi();
+          setLocked(false);
         } catch (error) {
           authState.user = null;
           authState.currentCharacterId = null;
           authState.characters = [];
+          authState.adminUsers = [];
           setAuthUi();
+          if (!authState.localModeChosen) setLocked(true);
         }
       }
 
@@ -1967,8 +2120,10 @@
             })
           });
           authState.user = payload.user;
+          authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadAdminUsers();
           authEls.registerSuccess.textContent = 'Account erstellt und dein aktueller Charakter wurde als erster Held gespeichert.';
           setAuthUi();
           setLocked(false);
@@ -1989,8 +2144,10 @@
             })
           });
           authState.user = payload.user;
+          authState.localModeChosen = true;
           await refreshCharactersList();
           await loadActiveCharacterFromServer();
+          await loadAdminUsers();
           setAuthUi();
           setLocked(false);
         } catch (error) {
@@ -2005,8 +2162,10 @@
           authState.user = null;
           authState.currentCharacterId = null;
           authState.characters = [];
+          authState.adminUsers = [];
+          authState.localModeChosen = false;
           setAuthUi();
-          setLocked(false);
+          setLocked(true);
         }
       }
 
@@ -2056,9 +2215,22 @@
         setTimeout(() => setDashboardStatus(''), 1800);
       }
 
-      authEls.openBtn.addEventListener('click', () => setLocked(true));
+      authEls.openBtn.addEventListener('click', () => {
+        if (authState.user) {
+          authEls.landingPanel.classList.add('hidden-section');
+          authEls.loginRegisterWrap.classList.add('hidden-section');
+        } else if (authState.localModeChosen) {
+          authEls.landingPanel.classList.remove('hidden-section');
+          authEls.loginRegisterWrap.classList.add('hidden-section');
+        }
+        setLocked(true);
+      });
+      authEls.showLoginChoiceBtn.addEventListener('click', showLoginForms);
+      authEls.continueLocalBtn.addEventListener('click', continueLocalMode);
       authEls.backdrop.addEventListener('click', (event) => {
-        if (event.target === authEls.backdrop) setLocked(false);
+        if (event.target !== authEls.backdrop) return;
+        if (!authState.user && !authState.localModeChosen) return;
+        setLocked(false);
       });
       authEls.loginSubmitBtn.addEventListener('click', login);
       authEls.registerSubmitBtn.addEventListener('click', register);
@@ -2080,6 +2252,7 @@
       });
 
       setAuthUi();
+      if (!authState.user && !authState.localModeChosen) setLocked(true);
       loadSession();
     })();
   </script>

@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-please';
 const COOKIE_NAME = 'dnd_sheet_session';
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'data', 'app.db');
+const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || '').split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -20,6 +21,7 @@ db.exec(`
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 `);
@@ -72,6 +74,41 @@ function migrateCharactersTableIfNeeded() {
 
 migrateCharactersTableIfNeeded();
 
+function migrateUsersTableIfNeeded() {
+  const cols = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
+  if (!cols.includes('is_admin')) {
+    db.exec(`ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0`);
+  }
+}
+migrateUsersTableIfNeeded();
+
+function isUserAdmin(user) {
+  if (!user) return false;
+  if (Number(user.is_admin || 0) === 1) return true;
+  return ADMIN_EMAILS.includes(String(user.email || '').toLowerCase());
+}
+
+function ensureAdminFlagForUser(userId) {
+  const user = db.prepare(`SELECT id, email, is_admin FROM users WHERE id = ?`).get(userId);
+  if (!user) return false;
+  const firstUser = db.prepare(`SELECT id FROM users ORDER BY id ASC LIMIT 1`).get();
+  const shouldBeAdmin = (firstUser && Number(firstUser.id) === Number(userId)) || ADMIN_EMAILS.includes(String(user.email || '').toLowerCase());
+  if (shouldBeAdmin && Number(user.is_admin || 0) !== 1) {
+    db.prepare(`UPDATE users SET is_admin = 1 WHERE id = ?`).run(userId);
+    return true;
+  }
+  return Number(user.is_admin || 0) === 1;
+}
+
+function adminMiddleware(req, res, next) {
+  const user = db.prepare(`SELECT id, email, display_name, is_admin FROM users WHERE id = ?`).get(req.user.id);
+  if (!isUserAdmin(user)) {
+    return res.status(403).json({ error: 'Adminzugang erforderlich.' });
+  }
+  req.adminUser = user;
+  next();
+}
+
 app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
@@ -89,7 +126,7 @@ function authMiddleware(req, res, next) {
 
 function issueSession(res, user) {
   const token = jwt.sign(
-    { id: user.id, email: user.email, displayName: user.display_name },
+    { id: user.id, email: user.email, displayName: user.display_name, isAdmin: isUserAdmin(user) },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
@@ -177,7 +214,8 @@ app.post('/api/register', (req, res) => {
     passwordHash,
     displayName
   );
-  const user = db.prepare('SELECT id, email, display_name FROM users WHERE id = ?').get(result.lastInsertRowid);
+  ensureAdminFlagForUser(result.lastInsertRowid);
+  const user = db.prepare('SELECT id, email, display_name, is_admin FROM users WHERE id = ?').get(result.lastInsertRowid);
 
   db.prepare(`
     INSERT INTO characters (user_id, name, payload, is_active)
@@ -186,7 +224,7 @@ app.post('/api/register', (req, res) => {
 
   issueSession(res, user);
   res.status(201).json({
-    user: { id: user.id, email: user.email, displayName: user.display_name }
+    user: { id: user.id, email: user.email, displayName: user.display_name, isAdmin: isUserAdmin(user) }
   });
 });
 
@@ -198,8 +236,10 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ error: 'E-Mail oder Passwort stimmen nicht.' });
   }
   ensureCharacterForUser(user.id);
-  issueSession(res, user);
-  res.json({ user: { id: user.id, email: user.email, displayName: user.display_name } });
+  ensureAdminFlagForUser(user.id);
+  const freshUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
+  issueSession(res, freshUser);
+  res.json({ user: { id: freshUser.id, email: freshUser.email, displayName: freshUser.display_name, isAdmin: isUserAdmin(freshUser) } });
 });
 
 app.post('/api/logout', (_req, res) => {
@@ -208,7 +248,11 @@ app.post('/api/logout', (_req, res) => {
 });
 
 app.get('/api/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
+  const user = db.prepare('SELECT id, email, display_name, is_admin FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(401).json({ error: 'Sitzung ungültig.' });
+  ensureAdminFlagForUser(user.id);
+  const freshUser = db.prepare('SELECT id, email, display_name, is_admin FROM users WHERE id = ?').get(req.user.id);
+  res.json({ user: { id: freshUser.id, email: freshUser.email, displayName: freshUser.display_name, isAdmin: isUserAdmin(freshUser) } });
 });
 
 app.get('/api/characters', authMiddleware, (req, res) => {
@@ -361,6 +405,59 @@ app.put('/api/character', authMiddleware, (req, res) => {
   }
 
   res.json({ ok: true, activeCharacterId: active.id });
+});
+
+
+app.get('/api/admin/stats', authMiddleware, adminMiddleware, (req, res) => {
+  const users = db.prepare(`SELECT COUNT(*) AS count FROM users`).get().count;
+  const characters = db.prepare(`SELECT COUNT(*) AS count FROM characters`).get().count;
+  res.json({ stats: { users, characters } });
+});
+
+app.get('/api/admin/users', authMiddleware, adminMiddleware, (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      u.id,
+      u.email,
+      u.display_name,
+      u.is_admin,
+      u.created_at,
+      COUNT(c.id) AS character_count,
+      MAX(c.updated_at) AS last_character_update
+    FROM users u
+    LEFT JOIN characters c ON c.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at DESC, u.id DESC
+  `).all();
+
+  res.json({
+    users: rows.map(row => ({
+      id: row.id,
+      email: row.email,
+      displayName: row.display_name,
+      isAdmin: !!row.is_admin || ADMIN_EMAILS.includes(String(row.email || '').toLowerCase()),
+      createdAt: row.created_at,
+      characterCount: row.character_count || 0,
+      lastCharacterUpdate: row.last_character_update || null
+    }))
+  });
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) return res.status(400).json({ error: 'Ungültige Benutzer-ID.' });
+  if (userId === req.user.id) return res.status(400).json({ error: 'Du kannst deinen eigenen Admin-Account hier nicht löschen.' });
+
+  const existing = db.prepare(`SELECT id, email FROM users WHERE id = ?`).get(userId);
+  if (!existing) return res.status(404).json({ error: 'Benutzer nicht gefunden.' });
+
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM characters WHERE user_id = ?`).run(userId);
+    db.prepare(`DELETE FROM users WHERE id = ?`).run(userId);
+  });
+  tx();
+
+  res.json({ ok: true });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
