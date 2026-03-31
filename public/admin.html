@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin – DnD Charakterbogen</title>
+  <link rel="icon" type="image/png" href="/dragon.png?v=1">
+  <style>
+    :root {
+      --bg-1: #080c12;
+      --bg-2: #0e1520;
+      --card: rgba(14, 22, 36, 0.92);
+      --card-2: rgba(20, 30, 50, 0.94);
+      --border: rgba(59, 130, 246, 0.22);
+      --border-strong: rgba(59, 130, 246, 0.42);
+      --text: #e8f0fe;
+      --muted: #8ba3c7;
+      --soft: #5c7a9e;
+      --accent: #2563eb;
+      --accent-2: #3b82f6;
+      --accent-soft: rgba(37, 99, 235, 0.13);
+      --accent-glow: rgba(37, 99, 235, 0.28);
+      --gold: #93c5fd;
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.13);
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.12);
+      --warn: #f59e0b;
+      --radius: 20px;
+      --shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 35%),
+        radial-gradient(circle at bottom left, rgba(15, 30, 70, 0.4), transparent 40%),
+        linear-gradient(135deg, #080c12, #0e1520 55%, #0a1628);
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: "⚙";
+      position: fixed;
+      right: 20px;
+      bottom: 0px;
+      font-size: min(28vw, 260px);
+      line-height: 1;
+      opacity: 0.025;
+      pointer-events: none;
+      z-index: 0;
+      color: #3b82f6;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px 24px;
+    }
+
+    /* ── HEADER ── */
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: rgba(8, 14, 24, 0.82);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 20px 28px;
+      margin-bottom: 28px;
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow);
+    }
+    .admin-header-left { display: flex; align-items: center; gap: 14px; }
+    .admin-logo {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, #1d4ed8, #2563eb);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 16px rgba(37,99,235,0.35);
+    }
+    .admin-title-block .eyebrow {
+      color: var(--accent-2);
+      text-transform: uppercase;
+      letter-spacing: 0.22em;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .admin-title-block h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      color: var(--text);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .header-user {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: var(--muted);
+    }
+    .header-user strong { color: var(--gold); }
+
+    /* ── STAT CARDS ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .stat-card .stat-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em;
+      color: var(--soft); font-weight: 600;
+    }
+    .stat-card .stat-value {
+      font-size: 2.2rem; font-weight: 800;
+      color: var(--gold); line-height: 1;
+    }
+    .stat-card .stat-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── MAIN GRID ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 22px;
+      align-items: start;
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+    }
+    .panel-head {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; flex-wrap: wrap;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    .panel-head h2 {
+      margin: 0; font-size: 1rem; font-weight: 700;
+      color: var(--text); display: flex; align-items: center; gap: 8px;
+    }
+    .panel-head h2 .icon { font-size: 1rem; }
+    .panel-body { padding: 20px; }
+
+    /* ── SEARCH ── */
+    .search-row {
+      display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .search-input {
+      flex: 1; min-width: 160px;
+      padding: 9px 14px; border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(8,14,24,0.7);
+      color: var(--text); font-size: 13px;
+      outline: none; transition: border-color .2s;
+    }
+    .search-input:focus { border-color: var(--accent-2); }
+    .search-input::placeholder { color: var(--soft); }
+
+    /* ── USER TABLE ── */
+    .user-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .user-table th {
+      text-align: left; padding: 8px 10px;
+      color: var(--soft); font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.12em;
+      border-bottom: 1px solid var(--border);
+    }
+    .user-table td {
+      padding: 11px 10px;
+      border-bottom: 1px solid rgba(59,130,246,0.07);
+      vertical-align: middle;
+    }
+    .user-table tr:last-child td { border-bottom: none; }
+    .user-table tr:hover td { background: rgba(37,99,235,0.05); }
+
+    .user-name { font-weight: 600; color: var(--text); }
+    .user-email { color: var(--muted); font-size: 12px; margin-top: 1px; }
+    .user-date { color: var(--soft); font-size: 11px; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-admin {
+      background: rgba(245,158,11,0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245,158,11,0.25);
+    }
+    .badge-user {
+      background: rgba(59,130,246,0.1);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .badge-chars {
+      background: rgba(34,197,94,0.1);
+      color: #4ade80;
+      border: 1px solid rgba(34,197,94,0.18);
+      font-size: 11px;
+    }
+
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── BUTTONS ── */
+    button {
+      cursor: pointer; border: 1px solid transparent;
+      border-radius: 10px; font-size: 13px; font-family: inherit;
+      transition: all .18s; font-weight: 500;
+    }
+    .btn {
+      padding: 8px 14px;
+      background: rgba(37,99,235,0.14);
+      border-color: var(--border);
+      color: var(--gold);
+    }
+    .btn:hover { background: rgba(37,99,235,0.26); border-color: var(--border-strong); }
+
+    .btn-sm {
+      padding: 5px 10px; font-size: 12px; border-radius: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(180deg, #2563eb, #1d4ed8);
+      border-color: rgba(96,165,250,0.3);
+      color: #fff;
+    }
+    .btn-primary:hover { background: linear-gradient(180deg, #3b82f6, #2563eb); }
+
+    .btn-danger {
+      background: var(--danger-soft);
+      border-color: rgba(239,68,68,0.25);
+      color: #fca5a5;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.22); }
+
+    .btn-success {
+      background: var(--success-soft);
+      border-color: rgba(34,197,94,0.22);
+      color: #86efac;
+    }
+    .btn-success:hover { background: rgba(34,197,94,0.2); }
+
+    .btn-warn {
+      background: rgba(245,158,11,0.13);
+      border-color: rgba(245,158,11,0.22);
+      color: #fcd34d;
+    }
+    .btn-warn:hover { background: rgba(245,158,11,0.22); }
+
+    .btn-ghost {
+      background: transparent; border-color: var(--border);
+      color: var(--muted);
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+
+    .btn:disabled, button:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ── FORM ── */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block; font-size: 12px; color: var(--muted);
+      margin-bottom: 6px; font-weight: 500;
+    }
+    .form-input {
+      width: 100%; padding: 9px 13px; border-radius: 11px;
+      border: 1px solid var(--border);
+      background: rgba(8,14,24,0.75);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      outline: none; transition: border-color .2s;
+    }
+    .form-input:focus { border-color: var(--accent-2); }
+    .form-input::placeholder { color: var(--soft); }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .form-check {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px; border-radius: 11px;
+      border: 1px solid var(--border);
+      background: rgba(8,14,24,0.55);
+      cursor: pointer; font-size: 13px;
+      color: var(--muted); transition: all .18s;
+    }
+    .form-check:hover { border-color: var(--border-strong); color: var(--text); }
+    .form-check input[type=checkbox] { accent-color: var(--accent-2); width: 15px; height: 15px; cursor: pointer; }
+
+    .form-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+
+    .msg {
+      min-height: 18px; font-size: 12px; margin-top: 10px;
+      padding: 8px 12px; border-radius: 10px;
+      display: none;
+    }
+    .msg.visible { display: block; }
+    .msg-error { background: var(--danger-soft); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); }
+    .msg-success { background: var(--success-soft); color: #86efac; border: 1px solid rgba(34,197,94,0.2); }
+
+    .divider {
+      border: none; border-top: 1px solid var(--border);
+      margin: 18px 0;
+    }
+    .section-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em;
+      color: var(--soft); font-weight: 600; margin-bottom: 12px;
+    }
+
+    .edit-panel-title {
+      font-size: 14px; font-weight: 700; color: var(--gold);
+      margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── LOCK SCREEN ── */
+    #lockScreen {
+      position: fixed; inset: 0;
+      background: rgba(4, 8, 16, 0.96);
+      backdrop-filter: blur(12px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; flex-direction: column; gap: 16px; text-align: center;
+    }
+    #lockScreen h2 { margin: 0; color: var(--text); font-size: 1.4rem; }
+    #lockScreen p { color: var(--muted); margin: 0; font-size: 14px; }
+    .lock-icon { font-size: 48px; margin-bottom: 8px; }
+
+    /* ── LOADING ── */
+    .loading { color: var(--soft); font-size: 13px; padding: 24px 0; text-align: center; }
+
+    .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 28px 0; }
+
+    /* ── CONFIRM MODAL ── */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(4,8,16,0.78); backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center;
+      z-index: 8000; padding: 20px;
+    }
+    .modal-backdrop.visible { display: flex; }
+    .modal {
+      background: linear-gradient(180deg, #0e1a2e, #08101c);
+      border: 1px solid var(--border-strong); border-radius: 22px;
+      padding: 28px; max-width: 420px; width: 100%;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+    }
+    .modal h3 { margin: 0 0 8px; color: var(--text); }
+    .modal p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    @media (max-width: 960px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .form-row { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Lock screen (shown until auth verified) -->
+<div id="lockScreen">
+  <div class="lock-icon">🔐</div>
+  <h2>Admin-Bereich</h2>
+  <p>Zugang wird geprüft…</p>
+</div>
+
+<!-- Confirm modal -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="modal">
+    <h3 id="confirmTitle">Bist du sicher?</h3>
+    <p id="confirmText"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" id="confirmCancel">Abbrechen</button>
+      <button class="btn btn-danger btn-sm" id="confirmOk">Ja, löschen</button>
+    </div>
+  </div>
+</div>
+
+<div class="container" id="appWrap" style="display:none">
+
+  <!-- Header -->
+  <div class="admin-header">
+    <div class="admin-header-left">
+      <div class="admin-logo">⚙️</div>
+      <div class="admin-title-block">
+        <div class="eyebrow">DnD Charakterbogen</div>
+        <h1>Admin-Backend</h1>
+      </div>
+    </div>
+    <div class="header-user">
+      Eingeloggt als <strong id="headerUserName">…</strong>
+      &nbsp;·&nbsp;
+      <button class="btn btn-ghost btn-sm" id="backToAppBtn">← Zur App</button>
+      <button class="btn btn-danger btn-sm" id="logoutBtn">Logout</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card">
+      <div class="stat-label">Benutzer</div>
+      <div class="stat-value" id="statUsers">–</div>
+      <div class="stat-sub">Registriert</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Charaktere</div>
+      <div class="stat-value" id="statChars">–</div>
+      <div class="stat-sub">Gespeichert</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Admins</div>
+      <div class="stat-value" id="statAdmins">–</div>
+      <div class="stat-sub">Mit Admin-Rechten</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="main-grid">
+
+    <!-- Left: User list -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2><span class="icon">👥</span> Benutzerverwaltung</h2>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm" id="refreshBtn">↻ Aktualisieren</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="search-row">
+          <input type="text" class="search-input" id="searchInput" placeholder="Nach Name oder E-Mail suchen…" />
+        </div>
+        <div id="userListWrap">
+          <div class="loading">Lade Benutzer…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Create / Edit panel -->
+    <div style="display:flex;flex-direction:column;gap:18px">
+
+      <!-- Create user -->
+      <div class="panel" id="createPanel">
+        <div class="panel-head">
+          <h2><span class="icon">➕</span> Neuen Benutzer anlegen</h2>
+        </div>
+        <div class="panel-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Anzeigename *</label>
+              <input type="text" class="form-input" id="createName" placeholder="z.B. Aragorn" />
+            </div>
+            <div class="form-group">
+              <label>E-Mail *</label>
+              <input type="email" class="form-input" id="createEmail" placeholder="held@abenteuer.at" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Passwort * (min. 8 Zeichen)</label>
+            <input type="password" class="form-input" id="createPassword" placeholder="Sicheres Passwort…" />
+          </div>
+          <label class="form-check">
+            <input type="checkbox" id="createIsAdmin" />
+            Admin-Rechte vergeben
+          </label>
+          <div class="form-actions">
+            <button class="btn btn-primary" id="createBtn">Benutzer anlegen</button>
+          </div>
+          <div class="msg" id="createMsg"></div>
+        </div>
+      </div>
+
+      <!-- Edit user (hidden by default) -->
+      <div class="panel" id="editPanel" style="display:none">
+        <div class="panel-head">
+          <h2><span class="icon">✏️</span> Benutzer bearbeiten</h2>
+        </div>
+        <div class="panel-body">
+          <div class="edit-panel-title" id="editUserLabel">–</div>
+
+          <div class="section-label">Stammdaten</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Anzeigename</label>
+              <input type="text" class="form-input" id="editName" />
+            </div>
+            <div class="form-group">
+              <label>E-Mail</label>
+              <input type="email" class="form-input" id="editEmail" />
+            </div>
+          </div>
+          <label class="form-check">
+            <input type="checkbox" id="editIsAdmin" />
+            Admin-Rechte
+          </label>
+
+          <hr class="divider" />
+          <div class="section-label">Passwort zurücksetzen (optional)</div>
+          <div class="form-group">
+            <input type="password" class="form-input" id="editPassword" placeholder="Neues Passwort (leer lassen = keine Änderung)" />
+          </div>
+
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" id="editSaveBtn">Speichern</button>
+            <button class="btn btn-ghost btn-sm" id="editCancelBtn">Abbrechen</button>
+          </div>
+          <div class="msg" id="editMsg"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let currentUser = null;
+let allUsers = [];
+let editingUserId = null;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    ...opts
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Fehler ${res.status}`);
+  return data;
+}
+
+function showMsg(el, text, type = 'error') {
+  el.textContent = text;
+  el.className = `msg visible msg-${type}`;
+  if (type === 'success') setTimeout(() => { el.className = 'msg'; }, 2800);
+}
+
+function fmtDate(str) {
+  if (!str) return '–';
+  return new Date(str).toLocaleDateString('de-AT', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+// ── Confirm modal ─────────────────────────────────────────────────────────────
+
+function confirm2(title, text, okLabel = 'Ja, löschen', okClass = 'btn-danger') {
+  return new Promise(resolve => {
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmText').textContent = text;
+    const okBtn = document.getElementById('confirmOk');
+    okBtn.textContent = okLabel;
+    okBtn.className = `btn btn-sm ${okClass}`;
+    document.getElementById('confirmModal').classList.add('visible');
+    const cleanup = (val) => {
+      document.getElementById('confirmModal').classList.remove('visible');
+      okBtn.removeEventListener('click', onOk);
+      document.getElementById('confirmCancel').removeEventListener('click', onCancel);
+      resolve(val);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    okBtn.addEventListener('click', onOk);
+    document.getElementById('confirmCancel').addEventListener('click', onCancel);
+  });
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function checkAuth() {
+  try {
+    const data = await apiFetch('/api/me');
+    if (!data.user || !data.user.isAdmin) {
+      showLockDenied();
+      return false;
+    }
+    currentUser = data.user;
+    return true;
+  } catch {
+    showLockDenied();
+    return false;
+  }
+}
+
+function showLockDenied() {
+  const ls = document.getElementById('lockScreen');
+  ls.querySelector('h2').textContent = 'Kein Zugang';
+  ls.querySelector('p').textContent = 'Du bist nicht als Admin eingeloggt. Bitte zuerst in der App einloggen.';
+  ls.querySelector('.lock-icon').textContent = '🚫';
+  const btn = document.createElement('a');
+  btn.href = '/';
+  btn.textContent = '← Zur App';
+  btn.style.cssText = 'margin-top:8px;padding:9px 18px;background:rgba(37,99,235,.18);border:1px solid rgba(59,130,246,.3);border-radius:12px;color:#93c5fd;text-decoration:none;font-size:14px;';
+  ls.appendChild(btn);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+  try {
+    const data = await apiFetch('/api/admin/stats');
+    document.getElementById('statUsers').textContent = data.stats.users ?? '–';
+    document.getElementById('statChars').textContent = data.stats.characters ?? '–';
+  } catch {}
+}
+
+function updateAdminCount() {
+  document.getElementById('statAdmins').textContent = allUsers.filter(u => u.isAdmin).length;
+}
+
+// ── User list ─────────────────────────────────────────────────────────────────
+
+async function loadUsers() {
+  document.getElementById('userListWrap').innerHTML = '<div class="loading">Lade Benutzer…</div>';
+  try {
+    const data = await apiFetch('/api/admin/users');
+    allUsers = data.users || [];
+    updateAdminCount();
+    renderUserList();
+  } catch (e) {
+    document.getElementById('userListWrap').innerHTML = `<div class="empty">Fehler: ${e.message}</div>`;
+  }
+}
+
+function renderUserList() {
+  const query = document.getElementById('searchInput').value.trim().toLowerCase();
+  const filtered = query
+    ? allUsers.filter(u =>
+        u.displayName.toLowerCase().includes(query) ||
+        u.email.toLowerCase().includes(query)
+      )
+    : allUsers;
+
+  if (!filtered.length) {
+    document.getElementById('userListWrap').innerHTML = '<div class="empty">Keine Benutzer gefunden.</div>';
+    return;
+  }
+
+  const isSelf = (u) => u.id === currentUser?.id;
+
+  const rows = filtered.map(u => `
+    <tr data-id="${u.id}">
+      <td>
+        <div class="user-name">${esc(u.displayName)}</div>
+        <div class="user-email">${esc(u.email)}</div>
+      </td>
+      <td>
+        <span class="badge ${u.isAdmin ? 'badge-admin' : 'badge-user'}">
+          ${u.isAdmin ? '⭐ Admin' : 'User'}
+        </span>
+      </td>
+      <td>
+        <span class="badge badge-chars">🗡 ${u.characterCount || 0}</span>
+      </td>
+      <td class="user-date">${fmtDate(u.createdAt)}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-sm btn-warn edit-btn" data-id="${u.id}">✏️ Bearbeiten</button>
+          ${!isSelf(u) ? `<button class="btn btn-sm btn-danger delete-btn" data-id="${u.id}">🗑 Löschen</button>` : '<span style="font-size:11px;color:var(--soft)">(du)</span>'}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('userListWrap').innerHTML = `
+    <table class="user-table">
+      <thead>
+        <tr>
+          <th>Benutzer</th>
+          <th>Rolle</th>
+          <th>Chars</th>
+          <th>Seit</th>
+          <th>Aktionen</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => openEditPanel(Number(btn.dataset.id)));
+  });
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => deleteUser(Number(btn.dataset.id)));
+  });
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Create user ───────────────────────────────────────────────────────────────
+
+async function createUser() {
+  const msg = document.getElementById('createMsg');
+  const name = document.getElementById('createName').value.trim();
+  const email = document.getElementById('createEmail').value.trim();
+  const password = document.getElementById('createPassword').value;
+  const isAdmin = document.getElementById('createIsAdmin').checked;
+
+  if (!name || !email || !password) { showMsg(msg, 'Bitte alle Pflichtfelder ausfüllen.'); return; }
+  if (password.length < 8) { showMsg(msg, 'Passwort mindestens 8 Zeichen.'); return; }
+
+  try {
+    document.getElementById('createBtn').disabled = true;
+    // Register via existing endpoint
+    await apiFetch('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ displayName: name, email, password, isAdmin })
+    });
+    showMsg(msg, `Benutzer „${name}" erfolgreich angelegt.`, 'success');
+    document.getElementById('createName').value = '';
+    document.getElementById('createEmail').value = '';
+    document.getElementById('createPassword').value = '';
+    document.getElementById('createIsAdmin').checked = false;
+    await loadUsers();
+    await loadStats();
+  } catch (e) {
+    showMsg(msg, e.message);
+  } finally {
+    document.getElementById('createBtn').disabled = false;
+  }
+}
+
+// ── Edit user ─────────────────────────────────────────────────────────────────
+
+function openEditPanel(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+  editingUserId = userId;
+
+  document.getElementById('editUserLabel').textContent = `${user.displayName} (${user.email})`;
+  document.getElementById('editName').value = user.displayName;
+  document.getElementById('editEmail').value = user.email;
+  document.getElementById('editIsAdmin').checked = !!user.isAdmin;
+  document.getElementById('editPassword').value = '';
+  document.getElementById('editMsg').className = 'msg';
+
+  document.getElementById('editPanel').style.display = 'block';
+  document.getElementById('editPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closeEditPanel() {
+  editingUserId = null;
+  document.getElementById('editPanel').style.display = 'none';
+}
+
+async function saveEdit() {
+  if (!editingUserId) return;
+  const msg = document.getElementById('editMsg');
+  const name = document.getElementById('editName').value.trim();
+  const email = document.getElementById('editEmail').value.trim();
+  const password = document.getElementById('editPassword').value;
+  const isAdmin = document.getElementById('editIsAdmin').checked;
+
+  if (!name || !email) { showMsg(msg, 'Name und E-Mail sind Pflichtfelder.'); return; }
+  if (password && password.length < 8) { showMsg(msg, 'Neues Passwort mindestens 8 Zeichen.'); return; }
+
+  const body = { displayName: name, email, isAdmin };
+  if (password) body.password = password;
+
+  try {
+    document.getElementById('editSaveBtn').disabled = true;
+    await apiFetch(`/api/admin/users/${editingUserId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
+    showMsg(msg, 'Gespeichert.', 'success');
+    await loadUsers();
+    await loadStats();
+    // update label
+    const updated = allUsers.find(u => u.id === editingUserId);
+    if (updated) document.getElementById('editUserLabel').textContent = `${updated.displayName} (${updated.email})`;
+  } catch (e) {
+    showMsg(msg, e.message);
+  } finally {
+    document.getElementById('editSaveBtn').disabled = false;
+  }
+}
+
+// ── Delete user ───────────────────────────────────────────────────────────────
+
+async function deleteUser(userId) {
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+  const ok = await confirm2(
+    'Benutzer löschen',
+    `Wirklich „${user.displayName}" (${user.email}) und alle zugehörigen Charaktere löschen? Das kann nicht rückgängig gemacht werden.`
+  );
+  if (!ok) return;
+  try {
+    await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+    if (editingUserId === userId) closeEditPanel();
+    await loadUsers();
+    await loadStats();
+  } catch (e) {
+    alert('Fehler: ' + e.message);
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  const ok = await checkAuth();
+  if (!ok) return;
+
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('appWrap').style.display = 'block';
+  document.getElementById('headerUserName').textContent = `${currentUser.displayName}`;
+
+  await Promise.all([loadStats(), loadUsers()]);
+
+  document.getElementById('searchInput').addEventListener('input', renderUserList);
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    await Promise.all([loadStats(), loadUsers()]);
+  });
+  document.getElementById('createBtn').addEventListener('click', createUser);
+  document.getElementById('editSaveBtn').addEventListener('click', saveEdit);
+  document.getElementById('editCancelBtn').addEventListener('click', closeEditPanel);
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    await apiFetch('/api/logout', { method: 'POST' }).catch(() => {});
+    window.location.href = '/';
+  });
+  document.getElementById('backToAppBtn').addEventListener('click', () => {
+    window.location.href = '/';
+  });
+}
+
+init();
+</script>
+</body>
+</html>
